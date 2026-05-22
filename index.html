@@ -1335,7 +1335,7 @@ function buildPost(p) {
 ${p.request ? '📌 요청사항 : '+p.request+'\n' : ''}🚩협회비 없음 / 배상책임보험 가입 지원
 ━━━━━━━━━━━━━━━━━━━━
 ${cfg.name || '씨앤에이케어간병협회'}
-📞 ${cfg.phone || '전화번호를 설정에서 입력해주세요'}`;
+📞 ${formatPhone(cfg.phone) || '전화번호를 설정에서 입력해주세요'}`;
 }
 
 function getDayLabel(dateStr) {
@@ -1600,7 +1600,7 @@ function openPatient(id) {
       <div style="width:36px;height:36px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex-shrink:0">${cg.name[0]}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:700;color:var(--black)">${cg.name} <span style="font-size:12px;font-weight:400;color:var(--gray)">${cg.age?cg.age+'세':''} ${cg.gender||''}</span></div>
-        <div style="font-size:12px;color:var(--gray);margin-top:2px">${cg.phone||''} ${cg.specialty?'· '+cg.specialty:''}</div>
+        <div style="font-size:12px;color:var(--gray);margin-top:2px">${formatPhone(cg.phone)||''} ${cg.specialty?'· '+cg.specialty:''}</div>
       </div>
       <button class="btn btn-sm" style="border-color:var(--green);color:var(--green)" onclick="closeOverlay('pt-overlay');showPage('caregiver');setTimeout(()=>openCgDetail('${cg.id}'),100)">
         간병인 상세 →
@@ -2205,7 +2205,7 @@ function renderCaregivers() {
       <div class="pt-meta">
         <span>🏥 ${cg.hospital||'—'}</span>
         <span>📅 ${cg.startDate||'—'} ${cg.startTime||''} → ${cg.endDate||'—'} ${cg.endTime||''}</span>
-        <span>📞 ${cg.phone||'—'}</span>
+        <span>📞 ${formatPhone(cg.phone)||'—'}</span>
         <span>💰 ${cg.pay?Number(cg.pay).toLocaleString()+'원':'—'}</span>
         ${cg.specialty?`<span>⭐ ${cg.specialty}</span>`:''}
       </div>
@@ -2598,7 +2598,7 @@ function buildReplaceReport(pt, newDate, newTime, newCg) {
 
   if(newCg) {
     cgName = newCg.name || '________';
-    cgPhone = newCg.phone || '________';
+    cgPhone = formatPhone(newCg.phone || '________');
     // 국적 판단 (주민번호 성별코드 5~8 = 외국인)
     if(newCg.ssn) {
       const sv = newCg.ssn.replace(/[-\s]/g,'');
@@ -2634,7 +2634,7 @@ function buildMatchReport(p) {
   const cgName   = cg ? cg.name   : (p.caregiverName||'________');
   const cgGender = cg ? (cg.gender||'') : '';
   const cgAge    = cg ? (cg.age ? cg.age+'세' : '') : '';
-  const cgPhone  = cg ? (cg.phone||'________') : '________';
+  const cgPhone  = cg ? formatPhone(cg.phone||'________') : '________';
   // 간병금액: 무조건 환자 정보 일급 기준
   const cgPay = p.pay ? Number(p.pay).toLocaleString()+'원' : '협의';
   const arriveDate = cg ? formatReportDate(cg.startDate||p.startDate, cg.startTime||p.startTime)
@@ -2662,6 +2662,18 @@ function buildEndReport(p) {
 }
 
 // ── 날짜 포맷 변환 ──
+// ─── 전화번호 포맷 ───
+function formatPhone(p) {
+  if(!p) return '';
+  const d = String(p).replace(/[^0-9]/g,'');
+  if(!d) return p;
+  if(d.length===11) return `${d.substring(0,3)}-${d.substring(3,7)}-${d.substring(7)}`;
+  if(d.length===10&&d.startsWith('02')) return `${d.substring(0,2)}-${d.substring(2,6)}-${d.substring(6)}`;
+  if(d.length===10) return `${d.substring(0,3)}-${d.substring(3,6)}-${d.substring(6)}`;
+  if(d.length===9&&d.startsWith('02')) return `${d.substring(0,2)}-${d.substring(2,5)}-${d.substring(5)}`;
+  return p;
+}
+
 function formatReportDate(dateStr, timeStr) {
   if(!dateStr) return '________';
   const d = new Date(dateStr);
@@ -2763,7 +2775,7 @@ function renderMembers() {
         </div>
       </div>
       <div class="pt-meta">
-        <span>📞 <b>${m.phone||'—'}</b></span>
+        <span>📞 <b>${formatPhone(m.phone)||'—'}</b></span>
         <span>📍 ${m.region||'—'}</span>
         <span>💼 경력 ${m.career||'—'}</span>
         ${m.specialty?`<span>⭐ ${m.specialty}</span>`:''}
@@ -3574,7 +3586,7 @@ function getPatientsData() {
     '진행상태','간병비','예정기간','시작일','시작시간','마감일','마감시간'];
   const rows = patients.map((p,i)=>[
     i+1, p.createdAt||'', p.name||'', '', p.gender||'',
-    String(p.contact||''),  // 전화번호 → 텍스트
+    formatPhone(String(p.contact||'')),  // 전화번호 → 텍스트
     p.hospital||'',
     [p.diagnosis,p.surgery!=='수술 없음'?p.surgery:'',p.diaper?'기저귀착용':'',p.move?'거동가능':'거동불가'].filter(Boolean).join(' / '),
     p.request||p.extra||'', p.caregiverName||'', p.status||'',
@@ -3593,7 +3605,7 @@ function getCaregiversData() {
     i+1, c.regDate||'', c.workStatus||'', c.name||'', c.ssn||'',
     c.age||'', c.gender||'',
     c.pay?Number(c.pay).toLocaleString()+'원':'',
-    String(c.phone||''),  // 전화번호 → 텍스트
+    formatPhone(c.phone||''),  // 전화번호 → 텍스트
     c.bankName||'', c.bankAccount||'', c.bankHolder||'',
     c.region||'', c.hospital||'',
     c.startDate||'', c.startTime||'', c.endDate||'', c.endTime||'',
@@ -3718,7 +3730,7 @@ function downloadJournalXLSX(cgList, filename) {
       const cgAttend = attendance.filter(a=>a.cgId===String(c.id)).sort((a,b)=>(a.inDate||'').localeCompare(b.inDate||''));
       const period = c.startDate&&c.endDate ? c.startDate+' ~ '+c.endDate : c.startDate||'';
       rows.push([`[간병인 ${ci+1}]`,'','','','','','','']);
-      rows.push(['간병인 성명', c.name||'', '', '연락처', String(c.phone||''), '', '간병기간', period]);
+      rows.push(['간병인 성명', c.name||'', '', '연락처', formatPhone(c.phone||''), '', '간병기간', period]);
       rows.push(['','','','','','','','']);
       rows.push(['간병일자(시작)','시작시간','간병일자(마감)','마감시간','간병업무','','','']);
       const fillCount = Math.max(cgAttend.length, 10);
@@ -3796,7 +3808,7 @@ function downloadJournalCSVFile(cgList, filename) {
   noPt.forEach((c,idx)=>{
     const period = c.startDate&&c.endDate?c.startDate+' ~ '+c.endDate:(c.startDate||'');
     allLines.push('간병일지,,,,,,,');
-    allLines.push('간병인 성명,'+csvEscape(c.name)+',,간병인 연락처,'+csvEscape(String(c.phone||''))+',,간병기간,'+csvEscape(period));
+    allLines.push('간병인 성명,'+csvEscape(c.name)+',,간병인 연락처,'+csvEscape(formatPhone(c.phone||''))+',,간병기간,'+csvEscape(period));
     allLines.push(',,,,,,,');
     journalLines(c,todayStr2).forEach(r=>allLines.push(r));
     allLines.push(',,,,작성일시:,'+todayStr2+',,');
@@ -3820,7 +3832,7 @@ function journalLines(c, todayStr2) {
   const period = c.startDate&&c.endDate ? c.startDate+' ~ '+c.endDate : (c.startDate||'');
   const rows = [];
   rows.push('[간병인],,,,,,,');
-  rows.push('간병인 성명,'+csvEscape(c.name)+',,연락처,'+csvEscape(c.phone||'')+',,간병기간,'+csvEscape(period));
+  rows.push('간병인 성명,'+csvEscape(c.name)+',,연락처,'+csvEscape(formatPhone(c.phone||''))+',,간병기간,'+csvEscape(period));
   rows.push(',,,,,,,');
   rows.push('간병일자(시작),시작시간,간병일자(마감),마감시간,간병업무,,');
   if(cgAttend.length>0){
