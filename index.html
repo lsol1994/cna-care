@@ -1895,7 +1895,7 @@ function copyForRoom(roomName) {
   doCopy(txt);
   const now=new Date();
   logs.unshift({room:roomName,patientId:selPt.id,patientName:selPt.name,
-    time:now.toLocaleDateString('ko-KR')+' '+now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})});
+    time:now.toLocaleDateString('ko-KR')+' '+now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})});
   save();renderRooms();updateSidebar();
   toast(`✅ [${roomName}] 복사+기록 완료! 카카오톡 붙여넣기 하세요`);
 }
@@ -2132,7 +2132,7 @@ function saveCg() {
 
     // 교체보고 로그 저장
     const now2 = new Date();
-    const timeStr = now2.toLocaleDateString('ko-KR')+' '+now2.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    const timeStr = now2.toLocaleDateString('ko-KR')+' '+now2.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
     reportLogs.unshift({
       patientId:   String(pt.id),
       patientName: pt.name,
@@ -2672,9 +2672,7 @@ function formatReportDate(dateStr, timeStr) {
   const [hStr, mStr] = timeStr.split(':');
   const h = parseInt(hStr||0);
   const m = parseInt(mStr||0);
-  const ampm = h < 12 ? '오전' : '오후';
-  const h12  = h === 0 ? 12 : h > 12 ? h-12 : h;
-  return `${month}월 ${day}일 ${ampm} ${h12}시${m>0?` ${m}분`:''}`;
+  return `${month}월 ${day}일 ${h}시${m>0?` ${m}분`:''}`;
 }
 
 function copyReportMsg() {
@@ -2687,7 +2685,7 @@ function saveReportLog() {
   if(!selRptPt){ toast('환자를 먼저 선택해주세요',true); return; }
   const type = document.getElementById('rpt-type')?.value || 'matched';
   const now  = new Date();
-  const timeStr = now.toLocaleDateString('ko-KR')+' '+now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  const timeStr = now.toLocaleDateString('ko-KR')+' '+now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
   reportLogs.unshift({
     patientId:   String(selRptPt.id),
     patientName: selRptPt.name,
@@ -3383,7 +3381,7 @@ function checkAutoEnd() {
 
       // 종료보고 로그 자동 저장 (한 번만)
       const now2 = new Date();
-      const timeStr = now2.toLocaleDateString('ko-KR')+' '+now2.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      const timeStr = now2.toLocaleDateString('ko-KR')+' '+now2.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
       newItems.forEach(({pt}) => {
         if(!pt) return;
         reportLogs.unshift({
