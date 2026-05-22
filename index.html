@@ -4143,6 +4143,41 @@ function importData(input) {
 function clearAll(){if(!confirm('모든 데이터 삭제? 복구 불가!'))return;patients=[];caregivers=[];logs=[];save();updateSidebar();toast('초기화됐어요');}
 
 // ─── INIT ───
+// 기존 데이터 시간 형식 정규화 (오전/오후 → 24시간)
+function normalizeTime(t) {
+  if(!t) return t;
+  t = String(t).trim();
+  // 이미 HH:MM 형식이면 그대로
+  if(/^\d{1,2}:\d{2}$/.test(t)) return t.padStart(5,'0').replace(/^(\d):/, '0$1:');
+  // 오전/오후 형식 처리
+  const m = t.match(/(오전|오후)\s*(\d{1,2})시(?:\s*(\d{1,2})분)?/);
+  if(m) {
+    let h = parseInt(m[2]);
+    const min = parseInt(m[3]||0);
+    if(m[1]==='오후' && h!==12) h+=12;
+    if(m[1]==='오전' && h===12) h=0;
+    return String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+  }
+  return t;
+}
+function normalizeTimes() {
+  let changed = false;
+  patients.forEach(p => {
+    const st=normalizeTime(p.startTime); if(st!==p.startTime){p.startTime=st;changed=true;}
+    const et=normalizeTime(p.endTime);   if(et!==p.endTime){p.endTime=et;changed=true;}
+  });
+  caregivers.forEach(c => {
+    const st=normalizeTime(c.startTime); if(st!==c.startTime){c.startTime=st;changed=true;}
+    const et=normalizeTime(c.endTime);   if(et!==c.endTime){c.endTime=et;changed=true;}
+  });
+  attendance.forEach(a => {
+    const it=normalizeTime(a.inTime);  if(it!==a.inTime){a.inTime=it;changed=true;}
+    const ot=normalizeTime(a.outTime); if(ot!==a.outTime){a.outTime=ot;changed=true;}
+  });
+  if(changed) save();
+}
+
+normalizeTimes();
 autoMatch();
 updateSidebar();
 renderDashboard();
