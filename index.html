@@ -1893,6 +1893,12 @@ function copySendText() {
   doCopy(txt);
 }
 
+function getSendText() {
+  if(!selPt) return '';
+  // 수정본 저장됐으면 수정본, 없으면 textarea 현재값
+  return document.getElementById('send-preview')?.value || selPt._editedPost || buildPost(selPt);
+}
+
 
 
 function renderRooms() {
