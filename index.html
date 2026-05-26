@@ -1789,8 +1789,28 @@ function savePatientEdit(id) {
   renderPatients();
   renderDashboard();
   updateSidebar();
-  openPatient(id); // 저장 후 상세 화면으로 돌아가기
-  toast('✅ 환자 정보가 수정됐어요');
+
+  // 매칭된 간병인 간병비 자동 업데이트 (환자 일급 - 5,000원)
+  if(p.pay) {
+    const cgPay = Math.max(0, Number(p.pay) - 5000);
+    const matched = caregivers.filter(c=>String(c.patientId)===String(p.id));
+    if(matched.length > 0) {
+      matched.forEach(c=>{ c.pay = String(cgPay); });
+      toast(`✅ 환자 정보 수정 + 간병인 간병비 자동 업데이트 (${cgPay.toLocaleString()}원)`);
+    } else {
+      toast('✅ 환자 정보가 수정됐어요');
+    }
+  } else {
+    toast('✅ 환자 정보가 수정됐어요');
+  }
+
+  // 수정본 스마트 업데이트
+  if(p._editedPost) {
+    p._editedPost = smartUpdatePost(p._editedPost, p);
+  }
+  save();
+
+  openPatient(id);
 }
 
 function changeStatus(id,status) {
@@ -2039,7 +2059,12 @@ function renderCgForm(cg, p) {
           <span class="age-display" id="cg-age-display">${cg&&cg.age?cg.age+'세':''}</span>
         </div>
       </div>
-      <div class="field"><label>간병비 (시급, 원)</label><input type="number" id="cg-pay" placeholder="120000" value="${v('pay')}"></div>
+      <div class="field">
+        <label>간병비 (원) <span style="font-size:10px;font-weight:400;color:var(--teal)">${p&&p.pay?'환자 일급('+Number(p.pay).toLocaleString()+'원)에서 자동계산':''}</span></label>
+        <input type="number" id="cg-pay" placeholder="120000"
+          value="${v('pay')||(p&&p.pay?Math.max(0,Number(p.pay)-5000):'')}">
+        ${p&&p.pay?`<div style="font-size:11px;color:var(--gray);margin-top:3px">환자 일급 ${Number(p.pay).toLocaleString()}원 − 5,000원 = <strong style="color:var(--teal)">${(Number(p.pay)-5000).toLocaleString()}원</strong></div>`:''}
+      </div>
       <div class="field"><label>연락처</label><input type="tel" id="cg-phone" placeholder="010-0000-0000" value="${v('phone')}"></div>
       <div class="field"><label>거주지 (시/군/구)</label><input type="text" id="cg-region" placeholder="서울시 강남구" value="${v('region')}"></div>
     </div>
@@ -2163,16 +2188,23 @@ function getCgData() {
     const age2=calcAgeFromSSN(clean);
     if(age2) age=age2;
   }
-  const pidEl=document.getElementById('cg-patientId');
+  const pidEl = document.getElementById('cg-patientId');
+  const patientId = pidEl ? pidEl.value : '';
+  // 간병비: 입력값 우선, 없으면 환자 일급 - 5,000원 자동계산
+  let payVal = document.getElementById('cg-pay').value;
+  if(!payVal && patientId) {
+    const pt = patients.find(p=>String(p.id)===String(patientId));
+    if(pt && pt.pay) payVal = String(Math.max(0, Number(pt.pay) - 5000));
+  }
   return {
     id:editCgId||Date.now(),
-    patientId:pidEl?pidEl.value:'',
+    patientId,
     regDate:document.getElementById('cg-regDate').value,
     workStatus:document.getElementById('cg-workStatus').value,
     name:document.getElementById('cg-name').value.trim(),
     ssn:document.getElementById('cg-ssn').value.trim(),
     age, gender:document.getElementById('cg-gender').value,
-    pay:document.getElementById('cg-pay').value,
+    pay:payVal,
     phone:document.getElementById('cg-phone').value.trim(),
     bankName:document.getElementById('cg-bankName').value.trim(),
     bankAccount:document.getElementById('cg-bankAccount').value.trim(),
@@ -2756,6 +2788,42 @@ function buildReplaceReport(pt, newDate, newTime, newCg) {
 *연락처 : ${cgPhone}
 *도착일시 : ${arriveStr}
 *계좌번호: ${bankStr}`;
+}
+
+// ─── 수정본 스마트 업데이트 ───
+// 환자 정보 변경 시 수정본의 특정 라인만 교체, 나머지(기타증상·요청사항·직접입력) 유지
+function smartUpdatePost(editedPost, p) {
+  const newPost = buildPost(p);
+  let lines = editedPost.split('\n');
+  const newLines = newPost.split('\n');
+
+  // 교체할 라인 패턴 (환자 정보 변경 시 바뀌어야 할 항목)
+  const replacePatterns = [
+    { prefix: '🚨[급구]🚨' },   // 제목 (구인성별)
+    { prefix: '🏥 병원위치' },
+    { prefix: '📅 간병시작일' },
+    { prefix: '👤 환자분' },
+    { prefix: '💰 가격' },
+    { prefix: '📆 기간' },
+  ];
+
+  replacePatterns.forEach(({ prefix }) => {
+    const newLine = newLines.find(l => l.startsWith(prefix));
+    if(!newLine) return;
+    const idx = lines.findIndex(l => l.startsWith(prefix));
+    if(idx > -1) {
+      lines[idx] = newLine;
+    } else {
+      // 없으면 추가 (━━ 구분선 앞에)
+      const divIdx = lines.findIndex(l => l.startsWith('━━'));
+      if(divIdx > -1) lines.splice(divIdx, 0, newLine);
+    }
+  });
+
+  // 📌 요청사항 라인은 유지 (변경 안 함)
+  // 직접 입력한 내용도 그대로 유지
+
+  return lines.join('\n');
 }
 
 function buildMatchReport(p) {
