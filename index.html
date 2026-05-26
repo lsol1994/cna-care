@@ -4179,6 +4179,24 @@ function autoMatch() {
     }
   });
 
+  // ⑤ 매칭완료인데 실제 연결된 간병인이 없으면 → 모집중 복구
+  patients.forEach(p => {
+    if(p.status === '종료') return; // 종료된 환자는 스킵
+    if(p.status !== '매칭완료' && p.recruited !== true) return;
+    // caregiverName이 없거나, 해당 이름의 간병인이 존재하지 않으면
+    const hasCgByName = p.caregiverName &&
+      caregivers.some(c => c.name === p.caregiverName.trim());
+    const hasCgById = caregivers.some(c => String(c.patientId) === String(p.id));
+    if(!hasCgByName && !hasCgById) {
+      p.status       = '모집중';
+      p.recruited    = false;
+      p.caregiverName = '';
+      p.endDate      = '';
+      p.endTime      = '';
+      count++;
+    }
+  });
+
   if(count > 0) save();
   return count;
 }
