@@ -1374,10 +1374,13 @@ function buildPost(p) {
   if(p.extra) stateParts.push(p.extra);
   const state = stateParts.filter(Boolean).join(' / ');
 
-  // 공고 시작일: 중도종료 후 재모집이면 recruitStartDate, 기본은 startDate
-  const postStartDate = (p.recruitStartDate && p.recruitStartDate !== p.startDate)
-    ? p.recruitStartDate
-    : p.startDate || '';
+  // 공고 시작일: 재모집 이력 마지막 날짜 → recruitStartDate → 원본 startDate 순
+  const lastRecruit = p.recruitHistory && p.recruitHistory.length
+    ? p.recruitHistory[p.recruitHistory.length - 1].recruitDate
+    : null;
+  const postStartDate = lastRecruit || (
+    (p.recruitStartDate && p.recruitStartDate !== p.startDate) ? p.recruitStartDate : p.startDate
+  ) || '';
   const days = getDayLabel(postStartDate);
 
   // 나이 + 몸무게
@@ -1575,7 +1578,7 @@ function ptRowHTML(p) {
     <div class="pt-meta">
       <span>🏥 <b>${p.hospital}</b></span>
       <span>📅 <b>${p.startDate||'—'}${getDayLabel(p.startDate)?' ('+getDayLabel(p.startDate)+')':''} ${p.startTime||''}</b></span>
-      ${p.recruitStartDate && p.recruitStartDate !== p.startDate ? `<span style="font-size:11px;color:var(--amber)">🔄 재모집: ${p.recruitStartDate}</span>` : ''}
+      ${p.recruitHistory && p.recruitHistory.length ? `<span class="badge b-amber" style="font-size:10px">🔄 ${p.recruitHistory.length}차 재모집</span>` : ''}
       <span>💊 ${p.diagnosis}</span>
       <span>📆 ${p.duration||'미정'}</span>
     </div>
@@ -1677,18 +1680,23 @@ function openPatient(id) {
     </div>
     ${p.recruitHistory && p.recruitHistory.length ? `
     <div class="hr"></div>
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--amber);margin-bottom:6px">🔄 재모집 이력 (${p.recruitHistory.length}회)</div>
-    <div style="font-size:12px;background:var(--surface2);border-radius:var(--rsm);padding:8px 10px">
-      <div style="display:grid;grid-template-columns:auto 1fr 1fr auto;gap:6px 12px;font-size:11px;font-weight:700;color:var(--gray);padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:4px">
-        <span>차수</span><span>종료일</span><span>재모집일</span><span>간병인</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--amber)">
+        🔄 재모집 이력 (${p.recruitHistory.length}회) · 현재 공고일: <span style="color:var(--teal)">${p.recruitHistory[p.recruitHistory.length-1].recruitDate||'—'}</span>
+      </div>
+      <button onclick="toggleRecruitHistory(this)" class="btn btn-sm" style="font-size:11px">▼ 펼치기</button>
+    </div>
+    <div class="recruit-history-body" style="display:none;font-size:12px;background:var(--surface2);border-radius:var(--rsm);padding:8px 10px">
+      <div style="display:grid;grid-template-columns:32px 1fr 1fr 1fr;gap:4px 10px;font-size:11px;font-weight:700;color:var(--gray);padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:4px">
+        <span>차수</span><span>종료일</span><span>재모집일</span><span>전 간병인</span>
       </div>
       ${p.recruitHistory.map((h,i)=>`
-        <div style="display:grid;grid-template-columns:auto 1fr 1fr auto;gap:4px 12px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">
-          <span class="badge b-amber" style="font-size:10px">${i+1}차</span>
+        <div style="display:grid;grid-template-columns:32px 1fr 1fr 1fr;gap:4px 10px;font-size:11px;padding:4px 0;border-bottom:1px solid var(--border)">
+          <span class="badge b-amber" style="font-size:10px;height:fit-content">${i+1}차</span>
           <span style="font-family:var(--mono)">${h.endDate||'—'}</span>
-          <span style="font-family:var(--mono);color:var(--teal)">${h.recruitDate||'—'}</span>
+          <span style="font-family:var(--mono);color:var(--teal);font-weight:700">${h.recruitDate||'—'}</span>
           <span>${h.prevCg||'—'}</span>
-          ${h.reason?`<span style="grid-column:span 4;color:var(--gray);padding-left:4px">사유: ${h.reason}</span>`:''}
+          ${h.reason?`<span style="grid-column:2/-1;color:var(--gray);font-size:10px">사유: ${h.reason}</span>`:''}
         </div>`).join('')}
       <div style="font-size:11px;color:var(--gray);margin-top:6px">📅 원본 서비스시작일: <b>${p.startDate||'—'}</b></div>
     </div>` : ''}
@@ -1803,14 +1811,20 @@ function editPatient(id) {
     <!-- 재모집 이력 목록 -->
     ${p.recruitHistory && p.recruitHistory.length ? `
     <div style="margin-top:.5rem">
-      <div style="font-size:11px;font-weight:700;color:var(--gray);margin-bottom:6px">재모집 이력</div>
-      ${p.recruitHistory.map((h,i)=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rsm);margin-bottom:4px;font-size:12px">
-          <span class="badge b-amber" style="font-size:10px">${i+1}차</span>
-          <span>종료: <b>${h.endDate||'—'}</b></span>
-          <span>재모집: <b>${h.recruitDate||'—'}</b></span>
-          ${h.reason?`<span style="color:var(--gray)">/ ${h.reason}</span>`:''}
-        </div>`).join('')}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--amber)">재모집 이력 (${p.recruitHistory.length}회)</div>
+        <button onclick="toggleRecruitHistory(this)" class="btn btn-sm" style="font-size:11px">▼ 펼치기</button>
+      </div>
+      <div class="recruit-history-body" style="display:none">
+        ${p.recruitHistory.map((h,i)=>`
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rsm);margin-bottom:3px;font-size:11px;flex-wrap:wrap">
+            <span class="badge b-amber" style="font-size:10px">${i+1}차</span>
+            <span>종료: <b>${h.endDate||'—'}</b></span>
+            <span>재모집: <b style="color:var(--teal)">${h.recruitDate||'—'}</b></span>
+            <span>이전간병인: ${h.prevCg||'—'}</span>
+            ${h.reason?`<span style="color:var(--gray);width:100%">사유: ${h.reason}</span>`:''}
+          </div>`).join('')}
+      </div>
     </div>` : ''}
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="savePatientEdit('${p.id}')">
@@ -2897,6 +2911,14 @@ function smartUpdatePost(editedPost, p) {
   // 직접 입력한 내용도 그대로 유지
 
   return lines.join('\n');
+}
+
+function toggleRecruitHistory(btn) {
+  const body = btn.closest('div').nextElementSibling;
+  if(!body) return;
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  btn.textContent = isHidden ? '▲ 접기' : '▼ 펼치기';
 }
 
 function buildMatchReport(p) {
