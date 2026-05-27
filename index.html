@@ -757,7 +757,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     <div class="stat"><div class="n" id="mem-total" style="color:var(--blue)">0</div><div class="l">전체 소속</div></div>
     <div class="stat"><div class="n" id="mem-active" style="color:var(--green)">0</div><div class="l">활동중</div></div>
     <div class="stat"><div class="n" id="mem-fee-ok" style="color:var(--teal)">0</div><div class="l">회비납부</div></div>
-    <div class="stat"><div class="n" id="mem-cert" style="color:var(--amber)">0</div><div class="l">자격증 보유</div></div>
+    <div class="stat"><div class="n" id="mem-cert-count" style="color:var(--amber)">0</div><div class="l">자격증 보유</div></div>
   </div>
   <div id="member-list"></div>
 </div>
@@ -2962,10 +2962,14 @@ function renderMembers() {
     (m.certNo||'').includes(q)||
     (m.specialty||'').toLowerCase().includes(q)
   );
-  document.getElementById('mem-total').textContent  = members.length;
-  document.getElementById('mem-active').textContent = members.filter(m=>m.status==='활동중').length;
-  document.getElementById('mem-fee-ok').textContent = members.filter(m=>m.feePaid).length;
-  document.getElementById('mem-cert').textContent   = members.filter(m=>m.cert).length;
+  const totalEl  = document.getElementById('mem-total');
+  const activeEl = document.getElementById('mem-active');
+  const feeEl    = document.getElementById('mem-fee-ok');
+  const certEl   = document.getElementById('mem-cert-count');
+  if(totalEl)  totalEl.textContent  = members.length;
+  if(activeEl) activeEl.textContent = members.filter(m=>m.status==='활동중').length;
+  if(feeEl)    feeEl.textContent    = members.filter(m=>m.feePaid).length;
+  if(certEl)   certEl.textContent   = members.filter(m=>m.cert).length;
   const el = document.getElementById('member-list');
   if(!list.length){
     el.innerHTML=`<div class="empty"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>${q?`"${q}" 검색 결과 없음`:'등록된 협회 소속 간병인이 없어요'}</p></div>`;
