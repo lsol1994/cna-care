@@ -1369,8 +1369,10 @@ function buildPost(p) {
   if(p.extra) stateParts.push(p.extra);
   const state = stateParts.filter(Boolean).join(' / ');
 
-  // 시작일+요일
-  const postStartDate = p.recruitStartDate || p.startDate || '';
+  // 공고 시작일: 중도종료 후 재모집이면 recruitStartDate, 기본은 startDate
+  const postStartDate = (p.recruitStartDate && p.recruitStartDate !== p.startDate)
+    ? p.recruitStartDate
+    : p.startDate || '';
   const days = getDayLabel(postStartDate);
 
   // 나이 + 몸무게
@@ -2528,13 +2530,14 @@ function deleteCg(id) {
   if(cg && cg.patientId) {
     const pt = patients.find(p=>String(p.id)===String(cg.patientId));
     if(pt) {
-      pt.status       = '모집중';
-      pt.recruited    = false;
+      pt.status        = '모집중';
+      pt.recruited     = false;
       pt.caregiverName = '';
-      pt.endDate      = '';
-      pt.endTime      = '';
-      // 재모집 시작일: 오늘 날짜로
-      pt.recruitStartDate = todayStr();
+      pt.endDate       = '';
+      pt.endTime       = '';
+      // 간병 시작 전 삭제 → recruitStartDate 제거 (원본 startDate로 공고)
+      // 간병 시작 후 중도종료는 confirmEarlyTerminate에서 별도 처리
+      delete pt.recruitStartDate;
       // 업체보고 로그에서 이 환자의 매칭보고 제거 (아직 시작 안 했으므로)
       reportLogs = reportLogs.filter(l=>
         !(String(l.patientId)===String(pt.id) && l.type==='matched')
@@ -4403,6 +4406,12 @@ function normalizeTimes() {
   patients.forEach(p => {
     const st=normalizeTime(p.startTime); if(st!==p.startTime){p.startTime=st;changed=true;}
     const et=normalizeTime(p.endTime);   if(et!==p.endTime){p.endTime=et;changed=true;}
+    // recruitStartDate가 startDate와 같거나 startDate보다 이전이면 제거 (잘못 세팅된 것)
+    if(p.recruitStartDate) {
+      if(p.recruitStartDate === p.startDate || p.recruitStartDate < p.startDate) {
+        delete p.recruitStartDate; changed=true;
+      }
+    }
   });
   caregivers.forEach(c => {
     const st=normalizeTime(c.startTime); if(st!==c.startTime){c.startTime=st;changed=true;}
