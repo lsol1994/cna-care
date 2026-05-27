@@ -1675,6 +1675,23 @@ function openPatient(id) {
     <div style="max-height:140px;overflow-y:auto;font-size:12px">
       ${pLogs.length?pLogs.map(l=>`<div style="padding:5px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between"><span>${l.room}</span><span style="font-family:var(--mono);color:var(--gray)">${l.time}</span></div>`).join(''):'<span style="color:var(--gray)">없음</span>'}
     </div>
+    ${p.recruitHistory && p.recruitHistory.length ? `
+    <div class="hr"></div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--amber);margin-bottom:6px">🔄 재모집 이력 (${p.recruitHistory.length}회)</div>
+    <div style="font-size:12px;background:var(--surface2);border-radius:var(--rsm);padding:8px 10px">
+      <div style="display:grid;grid-template-columns:auto 1fr 1fr auto;gap:6px 12px;font-size:11px;font-weight:700;color:var(--gray);padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:4px">
+        <span>차수</span><span>종료일</span><span>재모집일</span><span>간병인</span>
+      </div>
+      ${p.recruitHistory.map((h,i)=>`
+        <div style="display:grid;grid-template-columns:auto 1fr 1fr auto;gap:4px 12px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span class="badge b-amber" style="font-size:10px">${i+1}차</span>
+          <span style="font-family:var(--mono)">${h.endDate||'—'}</span>
+          <span style="font-family:var(--mono);color:var(--teal)">${h.recruitDate||'—'}</span>
+          <span>${h.prevCg||'—'}</span>
+          ${h.reason?`<span style="grid-column:span 4;color:var(--gray);padding-left:4px">사유: ${h.reason}</span>`:''}
+        </div>`).join('')}
+      <div style="font-size:11px;color:var(--gray);margin-top:6px">📅 원본 서비스시작일: <b>${p.startDate||'—'}</b></div>
+    </div>` : ''}
     <div class="hr"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-teal btn-sm" onclick="editPatient('${p.id}')">
@@ -1763,6 +1780,38 @@ function editPatient(id) {
     <div class="field"><label>요청사항</label>
       <textarea id="ep-request" style="min-height:55px">${p.request||''}</textarea>
     </div>
+    <div class="hr"></div>
+    <div class="card-hd" style="margin-bottom:.5rem">
+      <span class="dot" style="background:var(--amber)"></span>재모집 이력
+      <span style="font-size:10px;font-weight:400;color:var(--gray);text-transform:none;letter-spacing:0;margin-left:4px">중도종료 후 재모집 시에만 사용</span>
+    </div>
+    <div style="background:var(--surface2);border-radius:var(--rsm);padding:10px 12px;margin-bottom:.875rem;font-size:12px;color:var(--gray);line-height:1.8">
+      📌 <b>원본 서비스시작일</b>(위 근무조건)은 처음 계약일을 유지하세요.<br>
+      중도종료 후 재모집 시 아래 재모집 시작일을 입력하면 공고에 반영돼요.
+    </div>
+    <div class="g2">
+      <div class="field">
+        <label>재모집 시작일 <span style="font-size:10px;font-weight:400;color:var(--teal)">(공고에 표시될 날짜)</span></label>
+        <input type="date" id="ep-recruitStartDate" value="${p.recruitStartDate||''}">
+      </div>
+      <div class="field" style="display:flex;flex-direction:column;justify-content:flex-end">
+        <button class="btn btn-sm" onclick="document.getElementById('ep-recruitStartDate').value=''" style="margin-top:auto">
+          초기화 (원본 날짜로)
+        </button>
+      </div>
+    </div>
+    <!-- 재모집 이력 목록 -->
+    ${p.recruitHistory && p.recruitHistory.length ? `
+    <div style="margin-top:.5rem">
+      <div style="font-size:11px;font-weight:700;color:var(--gray);margin-bottom:6px">재모집 이력</div>
+      ${p.recruitHistory.map((h,i)=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rsm);margin-bottom:4px;font-size:12px">
+          <span class="badge b-amber" style="font-size:10px">${i+1}차</span>
+          <span>종료: <b>${h.endDate||'—'}</b></span>
+          <span>재모집: <b>${h.recruitDate||'—'}</b></span>
+          ${h.reason?`<span style="color:var(--gray)">/ ${h.reason}</span>`:''}
+        </div>`).join('')}
+    </div>` : ''}
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="savePatientEdit('${p.id}')">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>저장
@@ -1792,6 +1841,13 @@ function savePatientEdit(id) {
   p.duration  = document.getElementById('ep-duration').value.trim();
   p.pay       = document.getElementById('ep-pay').value;
   p.request   = document.getElementById('ep-request').value.trim();
+  // 재모집 시작일 - 비어있으면 제거, 있으면 저장
+  const recruitDate = document.getElementById('ep-recruitStartDate')?.value || '';
+  if(recruitDate && recruitDate !== p.startDate) {
+    p.recruitStartDate = recruitDate;
+  } else {
+    delete p.recruitStartDate;
+  }
   save();
   renderPatients();
   renderDashboard();
@@ -2500,6 +2556,15 @@ function confirmEarlyTerminate(cgId) {
       pt.recruited      = false;
       pt.caregiverName  = '';
       pt.recruitStartDate = endDate;
+      // 재모집 이력 누적 저장
+      if(!pt.recruitHistory) pt.recruitHistory = [];
+      pt.recruitHistory.push({
+        endDate,
+        recruitDate: endDate,
+        reason: reason || '',
+        prevCg: prevCgName,
+        recordedAt: new Date().toLocaleDateString('ko-KR')
+      });
       pt.extra = (pt.extra ? pt.extra + '\n' : '') +
         `[중도종료] ${prevCgName} (${endDate} 종료${reason ? ' / '+reason : ''})`;
       sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate,
