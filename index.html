@@ -931,6 +931,11 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <div class="card">
     <div class="card-hd"><span class="dot"></span>🗂 JSON 백업 / 복원</div>
     <p style="font-size:12px;color:var(--gray);margin-bottom:1rem;line-height:1.7">앱 전체 데이터를 JSON으로 백업하거나 복원해요.</p>
+    <div style="margin-bottom:.875rem">
+      <button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="fixRecruitDates()">
+        🔧 구인공고 날짜 정리 (잘못된 재모집날짜 초기화)
+      </button>
+    </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <label class="btn" style="cursor:pointer">
         <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>JSON 불러오기
@@ -2873,7 +2878,25 @@ function buildEndReport(p) {
 }
 
 // ── 날짜 포맷 변환 ──
-// ─── 전화번호 포맷 ───
+// ─── 구인공고 날짜 강제 정리 ───
+function fixRecruitDates() {
+  let count = 0;
+  patients.forEach(p => {
+    if(!p.recruitStartDate) return;
+    // startDate 이전이거나 같으면 제거
+    if(p.recruitStartDate <= (p.startDate||'9999-12-31')) {
+      delete p.recruitStartDate;
+      count++;
+    }
+  });
+  if(count > 0) {
+    save();
+    renderPatients();
+    toast(`✅ ${count}건 정리됐어요. 이제 서비스시작일로 공고가 올라가요.`);
+  } else {
+    toast('정리할 항목이 없어요', false);
+  }
+}
 function formatPhone(p) {
   if(!p) return '';
   const d = String(p).replace(/[^0-9]/g,'');
@@ -4410,10 +4433,12 @@ function normalizeTimes() {
   patients.forEach(p => {
     const st=normalizeTime(p.startTime); if(st!==p.startTime){p.startTime=st;changed=true;}
     const et=normalizeTime(p.endTime);   if(et!==p.endTime){p.endTime=et;changed=true;}
-    // recruitStartDate가 startDate와 같거나 startDate보다 이전이면 제거 (잘못 세팅된 것)
+    // recruitStartDate 정리: startDate 이전이거나 같으면 제거 (중도종료 후에만 유효)
     if(p.recruitStartDate) {
-      if(p.recruitStartDate === p.startDate || p.recruitStartDate < p.startDate) {
-        delete p.recruitStartDate; changed=true;
+      const rDate = new Date(p.recruitStartDate);
+      const sDate = new Date(p.startDate||'9999-12-31');
+      if(p.recruitStartDate <= p.startDate) {
+        delete p.recruitStartDate; changed = true;
       }
     }
   });
