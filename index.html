@@ -1936,6 +1936,7 @@ function selectSendPt(id) {
     card.style.display = 'none';
   }
   renderSend();
+  renderRooms(); // 환자 선택 시 단톡방별 발송 횟수 갱신
 }
 
 function updateSendEditLabel() {
@@ -2010,13 +2011,35 @@ function renderRooms() {
   const visible = showAll ? rooms : rooms.slice(0, LIMIT);
 
   el.innerHTML = visible.map((r, i) => {
-    const cnt = logs.filter(l=>l.room===r).length;
     const rEsc = r.replace(/'/g, "\\'");
+    const roomLogs = logs.filter(l=>l.room===r);
+
+    // 선택된 환자 발송 횟수
+    const ptCnt = selPt
+      ? roomLogs.filter(l=>String(l.patientId)===String(selPt.id)).length
+      : null;
+
+    // 환자별 발송 요약 (발송 기록 있는 환자만, 최대 5명)
+    const ptMap = {};
+    roomLogs.forEach(l=>{ if(l.patientName) ptMap[l.patientName]=(ptMap[l.patientName]||0)+1; });
+    const ptEntries = Object.entries(ptMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
     return `<div class="room-row" style="flex-wrap:wrap;gap:6px" id="room-row-${i}">
       <div class="room-ic"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
       <div style="flex:1;min-width:60px" id="room-label-${i}">
         <div style="font-size:13px;font-weight:600">${r}</div>
-        <div style="font-size:11px;color:var(--gray);font-family:var(--mono)">${cnt}회 발송</div>
+        ${selPt ? `
+        <div style="margin-top:3px">
+          <span style="font-size:12px;font-weight:700;color:${ptCnt>0?'var(--teal)':'var(--gray-lt)'}">
+            ${selPt.name} 발송 ${ptCnt}회
+          </span>
+        </div>` : ''}
+        ${ptEntries.length ? `
+        <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+          ${ptEntries.map(([name,cnt])=>
+            `<span style="background:${selPt&&name===selPt.name?'var(--teal-lt)':'var(--surface)'};border:1px solid ${selPt&&name===selPt.name?'var(--teal-mid)':'var(--border)'};border-radius:10px;padding:1px 8px;font-size:10px;font-weight:600;color:${selPt&&name===selPt.name?'var(--teal)':'var(--gray)'};white-space:nowrap">${name} ${cnt}회</span>`
+          ).join('')}
+        </div>` : `<div style="font-size:11px;color:var(--gray-lt);margin-top:2px">발송 기록 없음</div>`}
       </div>
       <div style="display:flex;gap:5px;align-items:center">
         <button class="btn btn-sm" onclick="copyOnlyRoom('${rEsc}')">복사</button>
@@ -2031,7 +2054,6 @@ function renderRooms() {
     </div>`;
   }).join('');
 
-  // 5개 초과 접기/펼치기 버튼
   if(rooms.length > LIMIT) {
     const hidden = rooms.length - LIMIT;
     el.innerHTML += `<button onclick="toggleRooms()" style="width:100%;margin-top:6px;padding:6px;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--rsm);font-size:12px;font-weight:600;color:var(--gray);cursor:pointer;transition:background .15s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='var(--surface2)'">
