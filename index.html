@@ -809,7 +809,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
       <select id="fin-mo-flt" onchange="renderFinLedger()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--rsm)">
         <option value="">전체</option>
-        ${Array.from({length:12},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}">${i+1}월</option>`).join('')}
+        <option value="01">1월</option><option value="02">2월</option><option value="03">3월</option>
+        <option value="04">4월</option><option value="05">5월</option><option value="06">6월</option>
+        <option value="07">7월</option><option value="08">8월</option><option value="09">9월</option>
+        <option value="10">10월</option><option value="11">11월</option><option value="12">12월</option>
       </select>
       <select id="fin-type-flt" onchange="renderFinLedger()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--rsm)">
         <option value="">전체</option><option value="income">입금</option><option value="expense">출금</option>
@@ -3855,86 +3858,6 @@ function checkOut(cgId) {
   toast(`✅ 퇴근 체크 완료 (${selDate} ${now})${nightNote}`);
 }
 
-function saveAttendance(cgId, origDate) {
-  const newInDate  = document.getElementById('att-in-date')?.value  || origDate;
-  const newInTime  = document.getElementById('att-in').value;
-  const newOutDate = document.getElementById('att-out-date')?.value || newInDate;
-  const newOutTime = document.getElementById('att-out').value;
-
-  // 기존 기록 제거 (origDate 기준)
-  if(origDate) {
-    const oldIdx = attendance.findIndex(a=>a.cgId===cgId&&a.inDate===origDate);
-    if(oldIdx > -1) attendance.splice(oldIdx, 1);
-  }
-
-  let rec = attendance.find(a=>a.cgId===cgId&&a.inDate===newInDate);
-  if(!rec){ rec={cgId, inDate:newInDate, inTime:'', outDate:'', outTime:''}; attendance.push(rec); }
-  rec.inDate  = newInDate;
-  rec.inTime  = newInTime;
-  rec.outDate = newOutDate;
-  rec.outTime = newOutTime;
-
-  if(newOutTime) {
-    const cg = caregivers.find(c=>String(c.id)===cgId);
-    if(cg) sendSheets({type:'journal', caregiverName:cg.name, hospital:cg.hospital,
-      startDate:newInDate, startTime:newInTime, endDate:newOutDate, endTime:newOutTime, note:'수동 수정'});
-  }
-  save(); closeOverlay('cg-overlay'); renderAttendance();
-  const nightNote = newInDate !== newOutDate ? ' (야간근무)' : '';
-  toast(`✅ 기록 저장됐어요 (출근 ${newInDate} ${newInTime||'미입력'} / 퇴근 ${newOutDate} ${newOutTime||'미입력'})${nightNote}`);
-}
-
-function editAttendanceDate(cgId, date) {
-  editAttendance(cgId, date);
-}
-
-function editAttendance(cgId, overrideDate) {
-  const cg = caregivers.find(c=>String(c.id)===cgId);
-  if(!cg) return;
-  const useDate = overrideDate || getAttendDate() || todayStr();
-  let rec = attendance.find(a=>a.cgId===cgId&&a.inDate===useDate);
-  if(!rec){ rec={cgId, inDate:useDate, inTime:'', outDate:useDate, outTime:''}; attendance.push(rec); }
-
-  document.getElementById('cg-modal-title').textContent = cg.name+' — 출퇴근 기록 수정';
-  document.getElementById('cg-form-body').innerHTML=`
-    <p style="font-size:12px;color:var(--gray);margin-bottom:.875rem;line-height:1.7">
-      야간근무의 경우 출근일과 퇴근일이 다를 수 있어요. 각각 날짜와 시간을 입력해주세요.
-    </p>
-    <div class="card-hd" style="margin-bottom:.5rem"><span class="dot"></span>출근</div>
-    <div class="g2" style="margin-bottom:.875rem">
-      <div class="field">
-        <label>출근 날짜</label>
-        <input type="date" id="att-in-date" value="${rec.inDate||useDate}">
-      </div>
-      <div class="field">
-        <label>출근 시간</label>
-        <input type="time" id="att-in" value="${rec.inTime||''}">
-      </div>
-    </div>
-    <div class="card-hd" style="margin-bottom:.5rem"><span class="dot"></span>퇴근</div>
-    <div class="g2" style="margin-bottom:1rem">
-      <div class="field">
-        <label>퇴근 날짜 <span style="font-size:10px;color:var(--teal);font-weight:400">(야간시 다음날 선택)</span></label>
-        <input type="date" id="att-out-date" value="${rec.outDate||rec.inDate||useDate}">
-      </div>
-      <div class="field">
-        <label>퇴근 시간</label>
-        <input type="time" id="att-out" value="${rec.outTime||''}">
-      </div>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveAttendance('${cgId}','${rec.inDate||useDate}')">저장</button>
-      <button class="btn" onclick="closeOverlay('cg-overlay')">취소</button>
-    </div>`;
-  document.getElementById('cg-overlay').classList.add('open');
-}
-
-function resetAttend(cgId, date) {
-  const useDate = date || getAttendDate() || todayStr();
-  const idx = attendance.findIndex(a=>a.cgId===cgId&&a.inDate===useDate);
-  if(idx>-1) attendance.splice(idx,1);
-  save(); renderAttendance();
-}
 
 // ─── 배상보험 ───
 function renderInsurance() {
