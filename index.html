@@ -2354,7 +2354,7 @@ function saveCg() {
     pt = patients.find(x=>String(x.id)===String(cg.patientId));
     if(pt) {
       // 중도종료 이력이 있으면 교체 상황
-      isReplace = !!(pt.extra && pt.extra.includes('[중도종료]'));
+      isReplace = !!(pt.recruitHistory && pt.recruitHistory.length > 0);
       pt.caregiverName = cg.name;
       pt.status        = '매칭완료';
       pt.recruited     = true;
@@ -2611,8 +2611,7 @@ function confirmEarlyTerminate(cgId) {
         prevCg: prevCgName,
         recordedAt: new Date().toLocaleDateString('ko-KR')
       });
-      pt.extra = (pt.extra ? pt.extra + '\n' : '') +
-        `[중도종료] ${prevCgName} (${endDate} 종료${reason ? ' / '+reason : ''})`;
+      // 중도종료 사유는 recruitHistory에만 기록 (기타특이사항에 반영 안 함)
       sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate,
         caregiverName:'', status:'모집중'});
     }
@@ -4552,7 +4551,13 @@ function normalizeTimes() {
   patients.forEach(p => {
     const st=normalizeTime(p.startTime); if(st!==p.startTime){p.startTime=st;changed=true;}
     const et=normalizeTime(p.endTime);   if(et!==p.endTime){p.endTime=et;changed=true;}
-    // recruitStartDate 정리: startDate 이전이거나 같으면 제거 (중도종료 후에만 유효)
+    // 기존 extra에 잘못 포함된 [중도종료] 이력 제거
+    if(p.extra && p.extra.includes('[중도종료]')) {
+      p.extra = p.extra.split('\n')
+        .filter(l => !l.startsWith('[중도종료]'))
+        .join('\n').trim();
+      changed = true;
+    }
     if(p.recruitStartDate) {
       const rDate = new Date(p.recruitStartDate);
       const sDate = new Date(p.startDate||'9999-12-31');
