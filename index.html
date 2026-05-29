@@ -1216,8 +1216,8 @@ function loadFirebase() {
     };
     s1.onerror = () => resolve(false);
     document.head.appendChild(s1);
-    // 5초 타임아웃
-    setTimeout(() => resolve(false), 5000);
+    // 3초 타임아웃 - 모바일 네트워크 대응
+    setTimeout(() => resolve(false), 3000);
   });
 }
 
@@ -4499,21 +4499,22 @@ function normalizeTimes() {
 }
 
 try {
-  // 1. 로컬 데이터로 즉시 렌더링 (Firebase 기다리지 않음)
   autoMatch();
   updateSidebar();
   renderDashboard();
   renderRooms();
   startRemind();
-  // 2. Firebase 백그라운드 연결 (완료 시 자동 갱신)
-  startFirebaseSync();
 } catch(e) {
   console.warn('초기화 오류:', e);
-  try { updateSidebar(); } catch(e2){}
-  try { renderDashboard(); } catch(e2){}
+  try { updateSidebar(); renderDashboard(); } catch(e2){}
 }
 
-// set today as default start date
+// Firebase는 100ms 후 비동기 실행 - 앱 동작과 완전 분리
+setTimeout(function() {
+  try { startFirebaseSync(); } catch(e) { console.warn('Firebase 오류:', e); }
+}, 100);
+
+// 오늘 날짜 기본값
 const today=new Date().toISOString().split('T')[0];
 const startDateEl=document.getElementById('p-start-date');
 if(startDateEl&&!startDateEl.value) startDateEl.value=today;
