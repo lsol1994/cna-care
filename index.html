@@ -1371,16 +1371,26 @@ function buildPost(p) {
   if(p.diaper) stateParts.push('기저귀 착용');
   if(p.move) stateParts.push('거동 가능');
   else stateParts.push('거동 불가');
-  if(p.extra) stateParts.push(p.extra);
+  // 기타 특이사항 - [중도종료] 이력은 공고에서 제외
+  if(p.extra) {
+    const extraClean = p.extra.split('\n')
+      .filter(line => !line.startsWith('[중도종료]'))
+      .join('\n').trim();
+    if(extraClean) stateParts.push(extraClean);
+  }
   const state = stateParts.filter(Boolean).join(' / ');
 
-  // 공고 시작일: 재모집 이력 마지막 날짜 → recruitStartDate → 원본 startDate 순
-  const lastRecruit = p.recruitHistory && p.recruitHistory.length
+  // 공고 시작일 우선순위:
+  // 1. 환자정보에 직접 입력한 재모집 시작일 (recruitStartDate)
+  // 2. 재모집 이력 마지막 항목의 recruitDate
+  // 3. 원본 서비스시작일 (startDate)
+  const lastRecruitDate = p.recruitHistory && p.recruitHistory.length
     ? p.recruitHistory[p.recruitHistory.length - 1].recruitDate
     : null;
-  const postStartDate = lastRecruit || (
-    (p.recruitStartDate && p.recruitStartDate !== p.startDate) ? p.recruitStartDate : p.startDate
-  ) || '';
+  const hasRecruitStart = p.recruitStartDate && p.recruitStartDate !== p.startDate;
+  const postStartDate = hasRecruitStart
+    ? p.recruitStartDate
+    : (lastRecruitDate || p.startDate || '');
   const days = getDayLabel(postStartDate);
 
   // 나이 + 몸무게
