@@ -3374,62 +3374,76 @@ function editAttendance(cgId, overrideDate) {
   const cg = caregivers.find(c=>String(c.id)===cgId);
   if(!cg) return;
   const useDate = overrideDate || getAttendDate() || todayStr();
-  let rec = attendance.find(a=>a.cgId===cgId&&a.date===useDate);
-  if(!rec){ rec={cgId,date:useDate,inTime:'',outTime:''}; attendance.push(rec); }
+  // 신버전(inDate) + 구버전(date) 모두 찾기
+  let rec = attendance.find(a=>a.cgId===cgId&&(a.inDate===useDate||a.date===useDate));
+  if(!rec){ rec={cgId, inDate:useDate, inTime:'', outDate:useDate, outTime:''}; attendance.push(rec); }
+  // 구버전이면 신버전으로 변환
+  if(rec.date && !rec.inDate) { rec.inDate=rec.date; rec.outDate=rec.date; delete rec.date; }
 
   document.getElementById('cg-modal-title').textContent = cg.name+' — 출퇴근 기록 수정';
   document.getElementById('cg-form-body').innerHTML=`
     <p style="font-size:12px;color:var(--gray);margin-bottom:.875rem;line-height:1.7">
-      날짜와 출퇴근 시간을 수정할 수 있어요.<br>
-      날짜를 바꾸면 해당 날짜 기록으로 저장됩니다.
+      야간근무의 경우 출근일과 퇴근일이 다를 수 있어요.
     </p>
-    <div class="g2">
-      <div class="field" style="grid-column:span 2">
-        <label>날짜</label>
-        <input type="date" id="att-date" value="${rec.date||useDate}">
+    <div class="card-hd" style="margin-bottom:.5rem"><span class="dot"></span>출근</div>
+    <div class="g2" style="margin-bottom:.875rem">
+      <div class="field">
+        <label>출근 날짜</label>
+        <input type="date" id="att-in-date" value="${rec.inDate||useDate}">
       </div>
       <div class="field">
         <label>출근 시간</label>
         <input type="time" id="att-in" value="${rec.inTime||''}">
+      </div>
+    </div>
+    <div class="card-hd" style="margin-bottom:.5rem"><span class="dot"></span>퇴근</div>
+    <div class="g2" style="margin-bottom:1rem">
+      <div class="field">
+        <label>퇴근 날짜 <span style="font-size:10px;color:var(--teal);font-weight:400">(야간시 다음날)</span></label>
+        <input type="date" id="att-out-date" value="${rec.outDate||rec.inDate||useDate}">
       </div>
       <div class="field">
         <label>퇴근 시간</label>
         <input type="time" id="att-out" value="${rec.outTime||''}">
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin-top:1rem">
-      <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveAttendance('${cgId}','${rec.date||useDate}')">저장</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveAttendance('${cgId}','${rec.inDate||useDate}')">저장</button>
       <button class="btn" onclick="closeOverlay('cg-overlay')">취소</button>
     </div>`;
   document.getElementById('cg-overlay').classList.add('open');
 }
 
 function saveAttendance(cgId, origDate) {
-  const newDate  = document.getElementById('att-date').value || origDate;
-  const inTime   = document.getElementById('att-in').value;
-  const outTime  = document.getElementById('att-out').value;
+  const newInDate  = document.getElementById('att-in-date')?.value  || origDate;
+  const newInTime  = document.getElementById('att-in').value;
+  const newOutDate = document.getElementById('att-out-date')?.value || newInDate;
+  const newOutTime = document.getElementById('att-out').value;
 
-  // 날짜가 바뀌었으면 기존 날짜 기록 제거
-  if(origDate && origDate !== newDate) {
-    const oldIdx = attendance.findIndex(a=>a.cgId===cgId&&a.date===origDate);
+  // 기존 기록 제거 (origDate 기준 - 신/구버전 모두)
+  if(origDate) {
+    const oldIdx = attendance.findIndex(a=>a.cgId===cgId&&(a.inDate===origDate||a.date===origDate));
     if(oldIdx > -1) attendance.splice(oldIdx, 1);
   }
 
-  // 새 날짜 기록 찾거나 생성
-  let rec = attendance.find(a=>a.cgId===cgId&&a.date===newDate);
-  if(!rec){ rec={cgId, date:newDate, inTime:'', outTime:''}; attendance.push(rec); }
-  rec.inTime  = inTime;
-  rec.outTime = outTime;
-  rec.date    = newDate;
+  // 신버전 구조로 저장
+  let rec = attendance.find(a=>a.cgId===cgId&&a.inDate===newInDate);
+  if(!rec){ rec={cgId, inDate:newInDate, inTime:'', outDate:'', outTime:''}; attendance.push(rec); }
+  rec.inDate  = newInDate;
+  rec.inTime  = newInTime;
+  rec.outDate = newOutDate;
+  rec.outTime = newOutTime;
+  // 구버전 date 필드 제거
+  delete rec.date;
 
-  // 퇴근 시간 있으면 간병일지 전송
-  if(outTime) {
+  if(newOutTime) {
     const cg = caregivers.find(c=>String(c.id)===cgId);
     if(cg) sendSheets({type:'journal', caregiverName:cg.name, hospital:cg.hospital,
-      startDate:newDate, startTime:inTime, endDate:newDate, endTime:outTime, note:'수동 수정'});
+      startDate:newInDate, startTime:newInTime, endDate:newOutDate, endTime:newOutTime, note:'수동 수정'});
   }
   save(); closeOverlay('cg-overlay'); renderAttendance();
-  toast(`✅ ${newDate} 출퇴근 기록 저장됐어요 (출근 ${inTime||'미입력'} / 퇴근 ${outTime||'미입력'})`);
+  const nightNote = newInDate !== newOutDate ? ' (야간근무)' : '';
+  toast(`✅ ${newInDate} 출퇴근 기록 저장됐어요 (출근 ${newInTime||'미입력'} / 퇴근 ${newOutTime||'미입력'})${nightNote}`);
 }
 
 function checkIn(cgId) {
@@ -4491,7 +4505,14 @@ function normalizeTimes() {
     const st=normalizeTime(c.startTime); if(st!==c.startTime){c.startTime=st;changed=true;}
     const et=normalizeTime(c.endTime);   if(et!==c.endTime){c.endTime=et;changed=true;}
   });
+  // 구버전 attendance {date} → 신버전 {inDate, outDate} 자동 변환
   attendance.forEach(a => {
+    if(a.date && !a.inDate) {
+      a.inDate  = a.date;
+      a.outDate = a.date;
+      delete a.date;
+      changed = true;
+    }
     const it=normalizeTime(a.inTime);  if(it!==a.inTime){a.inTime=it;changed=true;}
     const ot=normalizeTime(a.outTime); if(ot!==a.outTime){a.outTime=ot;changed=true;}
   });
