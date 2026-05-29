@@ -413,6 +413,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <button class="top-tab" id="tt-report" onclick="showPage('report')" style="color:var(--amber);font-weight:700">📋 업체보고</button>
   <button class="top-tab" id="tt-members" onclick="showPage('members')" style="color:var(--blue);font-weight:700">🏢 협회 간병인</button>
   <button class="top-tab" id="tt-log" onclick="showPage('log')">발송 기록</button>
+  <button class="top-tab" id="tt-finance" onclick="showPage('finance')" style="color:#0A7C55;font-weight:700">💰 재무관리</button>
   <button class="top-tab" id="tt-settings" onclick="showPage('settings')">설정</button>
 </div>
 
@@ -436,6 +437,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   </button>
   <button class="aside-btn" id="mb-log" onclick="showPage('log')">
     <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>발송 기록
+  </button>
+  <button class="aside-btn" id="mb-finance" onclick="showPage('finance')" style="color:#0A7C55;font-weight:700">
+    <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>재무관리
   </button>
   <button class="aside-btn" id="mb-report" onclick="showPage('report')" style="color:var(--amber);font-weight:700">
     <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>업체보고
@@ -772,6 +776,99 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       </button>
     </div>
     <div id="member-form-body"></div>
+  </div>
+</div>
+
+<!-- ══ FINANCE ══ -->
+<div class="page" id="page-finance">
+  <div class="sh">
+    <div><div class="sh-title">재무관리</div><div class="sh-sub">입출금 · 간병인 급여 · 지출결의 관리</div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-sm" id="fin-tab-salary" onclick="showFinTab('salary')" style="background:#0A7C55;color:#fff;border-color:#0A7C55">💰 간병인 급여</button>
+      <button class="btn btn-sm" id="fin-tab-ledger" onclick="showFinTab('ledger')">📒 입출금 장부</button>
+      <button class="btn btn-sm" id="fin-tab-pending" onclick="showFinTab('pending')">📋 지출결의 예약</button>
+    </div>
+  </div>
+
+  <!-- 간병인 급여 탭 -->
+  <div id="fin-salary" class="fin-tab">
+    <div class="g4" style="margin-bottom:1.25rem" id="fin-salary-stats"></div>
+    <div class="card">
+      <div class="card-hd" style="justify-content:space-between">
+        <div><span class="dot" style="background:#0A7C55"></span>간병인 주급 일정
+          <span style="font-size:10px;font-weight:400;color:var(--gray);text-transform:none;letter-spacing:0;margin-left:4px">입실 8일째 첫 주급 · 이후 매주 동일 요일</span>
+        </div>
+        <button class="btn btn-sm" onclick="genSalarySchedule()" style="border-color:#0A7C55;color:#0A7C55">🔄 자동 계산</button>
+      </div>
+      <div id="salary-list"></div>
+    </div>
+  </div>
+
+  <!-- 입출금 장부 탭 -->
+  <div id="fin-ledger" class="fin-tab" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+      <select id="fin-mo-flt" onchange="renderFinLedger()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--rsm)">
+        <option value="">전체</option>
+        ${Array.from({length:12},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}">${i+1}월</option>`).join('')}
+      </select>
+      <select id="fin-type-flt" onchange="renderFinLedger()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--rsm)">
+        <option value="">전체</option><option value="income">입금</option><option value="expense">출금</option>
+      </select>
+      <button class="btn btn-sm" onclick="openFinAdd()" style="background:#0A7C55;color:#fff;border-color:#0A7C55">+ 거래 추가</button>
+    </div>
+    <div class="g4" style="margin-bottom:1rem" id="fin-ledger-stats"></div>
+    <div id="fin-ledger-list"></div>
+  </div>
+
+  <!-- 지출결의 예약 탭 -->
+  <div id="fin-pending" class="fin-tab" style="display:none">
+    <div class="card">
+      <div class="card-hd" style="justify-content:space-between">
+        <div><span class="dot" style="background:var(--amber)"></span>지출결의 예약
+          <span style="font-size:10px;font-weight:400;color:var(--gray);text-transform:none;letter-spacing:0">급여 지급 예정일 자동 등록</span>
+        </div>
+        <button class="btn btn-sm" onclick="genSalarySchedule()" style="border-color:var(--amber);color:var(--amber)">🔄 급여 일정 갱신</button>
+      </div>
+      <div id="pending-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 거래 추가/수정 모달 -->
+<div class="overlay" id="fin-overlay" onclick="closeOverlay('fin-overlay',event)">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hd">
+      <div class="modal-title" id="fin-modal-title">거래 추가</div>
+      <button class="btn btn-icon" onclick="closeOverlay('fin-overlay')">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="g2">
+      <div class="field"><label>날짜</label><input type="date" id="fin-date"></div>
+      <div class="field"><label>구분</label>
+        <select id="fin-type"><option value="expense">출금</option><option value="income">입금</option></select>
+      </div>
+      <div class="field"><label>금액 (원)</label><input type="number" id="fin-amount" placeholder="0"></div>
+      <div class="field"><label>계정과목</label>
+        <select id="fin-acct">
+          <option value="급여">급여</option><option value="보험료">보험료</option>
+          <option value="복리후생비">복리후생비</option><option value="소모품비">소모품비</option>
+          <option value="임차료">임차료</option><option value="통신비">통신비</option>
+          <option value="차량유지비">차량유지비</option><option value="매출액">매출액</option><option value="기타">기타</option>
+        </select>
+      </div>
+      <div class="field" style="grid-column:span 2"><label>내용</label>
+        <input type="text" id="fin-desc" placeholder="거래 내용">
+      </div>
+      <div class="field" style="grid-column:span 2"><label>메모</label>
+        <input type="text" id="fin-note" placeholder="메모">
+      </div>
+    </div>
+    <input type="hidden" id="fin-edit-id">
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn" style="flex:1;justify-content:center;background:#0A7C55;color:#fff;border-color:#0A7C55" onclick="saveFinLedger()">저장</button>
+      <button class="btn" onclick="closeOverlay('fin-overlay')">취소</button>
+    </div>
   </div>
 </div>
 
@@ -1344,7 +1441,7 @@ function showPage(name) {
   if(m) m.classList.add('act');
   const tt=document.getElementById('tt-'+name);
   if(tt) tt.classList.add('act');
-  const fns={dashboard:renderDashboard,patients:renderPatients,send:renderSend,caregiver:renderCaregivers,log:renderLog,settings:loadSettings,report:renderReport,members:renderMembers};
+  const fns={dashboard:renderDashboard,patients:renderPatients,send:renderSend,caregiver:renderCaregivers,log:renderLog,settings:loadSettings,report:renderReport,members:renderMembers,finance:renderFinance};
   if(fns[name]) fns[name]();
   updateSidebar();
 }
@@ -1964,13 +2061,6 @@ function updateSendEditLabel() {
   }
 }
 
-function resetSendPreview() {
-  if(!selPt) return;
-  document.getElementById('send-preview').value = buildPost(selPt);
-  if(selPt._editedPost) delete selPt._editedPost;
-  updateSendEditLabel();
-  toast('원본 공고로 복원됐어요');
-}
 
 function saveSendEdit() {
   if(!selPt) return;
@@ -2414,8 +2504,11 @@ function saveCg() {
     setTimeout(()=>{ popup.style.display='none'; }, 20000);
 
     toast(`✅ 간병인 등록 완료! 교체보고가 자동 작성됐어요.`);
-  } else {
-    toast('✅ 간병인 등록 완료! Sheets 3개 시트에 전송됐어요');
+  // 급여 일정 자동 생성 (근무중·대기중 간병인만)
+  if(cg.workStatus==='근무중'||cg.workStatus==='대기중') {
+    const added = autoAddSalarySchedule(cg, pt);
+    if(added) toast(`✅ 간병인 등록 완료! 급여 ${added}건 지출결의 예약됐어요`);
+    else if(!isReplace) toast('✅ 간병인 등록 완료! Sheets 3개 시트에 전송됐어요');
   }
 }
 
@@ -3015,6 +3108,295 @@ function fixRecruitDates() {
     toast('정리할 항목이 없어요');
   }
 }
+
+// ─── 재무관리 ───
+let finLedger  = JSON.parse(localStorage.getItem('cnc_fin_ledger')  || '[]');
+let finPending = JSON.parse(localStorage.getItem('cnc_fin_pending') || '[]');
+let finTabCur  = 'salary';
+
+function saveFinData() {
+  localStorage.setItem('cnc_fin_ledger',  JSON.stringify(finLedger));
+  localStorage.setItem('cnc_fin_pending', JSON.stringify(finPending));
+  if(db) {
+    db.ref('cnc/finLedger').set(finLedger).catch(e=>console.warn('fin save err',e));
+    db.ref('cnc/finPending').set(finPending).catch(e=>console.warn('fin save err',e));
+  }
+}
+
+function showFinTab(tab) {
+  finTabCur = tab;
+  document.querySelectorAll('.fin-tab').forEach(el=>el.style.display='none');
+  const tabEl = document.getElementById('fin-'+tab);
+  if(tabEl) tabEl.style.display='';
+  ['salary','ledger','pending'].forEach(t=>{
+    const btn = document.getElementById('fin-tab-'+t);
+    if(!btn) return;
+    if(t===tab){ btn.style.background='#0A7C55'; btn.style.color='#fff'; btn.style.borderColor='#0A7C55'; }
+    else { btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; }
+  });
+  if(tab==='salary')  renderSalaryList();
+  if(tab==='ledger')  renderFinLedger();
+  if(tab==='pending') renderPendingList();
+}
+
+function renderFinance() { showFinTab(finTabCur); }
+
+// 급여 지급일 계산
+// 첫 주급: startDate 포함 8일째 = startDate + 7일
+// 이후: 매 7일 반복
+function calcSalaryDates(startDateStr, endDateStr) {
+  const dates = [];
+  const start = new Date(startDateStr);
+  if(isNaN(start.getTime())) return dates;
+
+  // 첫 주급: 입실일 + 7일 = 8일째
+  const first = new Date(start);
+  first.setDate(first.getDate() + 7);
+
+  const end = endDateStr ? new Date(endDateStr) : null;
+  let cur = new Date(first);
+  let week = 1;
+
+  while(true) {
+    if(end && cur > end) break;
+    if(!end && week > 26) break; // 최대 26주
+    dates.push({ week, date: cur.toISOString().split('T')[0] });
+    cur = new Date(cur);
+    cur.setDate(cur.getDate() + 7);
+    week++;
+  }
+  return dates;
+}
+
+function genSalarySchedule() {
+  const activeCg = caregivers.filter(c=>c.workStatus==='근무중'||c.workStatus==='대기중');
+  if(!activeCg.length){ toast('근무중인 간병인이 없어요', true); return; }
+  let added = 0;
+  activeCg.forEach(cg=>{
+    if(!cg.startDate || !cg.pay) return;
+    const pt  = patients.find(p=>String(p.id)===String(cg.patientId));
+    const pay = Number(cg.pay);
+    if(!pay) return;
+    const salDates = calcSalaryDates(cg.startDate, cg.endDate);
+    salDates.forEach(({week, date})=>{
+      const exists = finPending.some(p=>p.cgId===String(cg.id)&&p.payDate===date&&p.type==='salary');
+      if(exists) return;
+      const weekPay = pay * 7;
+      finPending.push({
+        id:String(Date.now()+Math.random()), type:'salary',
+        cgId:String(cg.id), cgName:cg.name,
+        patientName:pt?pt.name:'', hospital:cg.hospital||(pt?pt.hospital:''),
+        week, payDate:date, amount:weekPay, status:'예약',
+        desc:`${cg.name} ${week}주차 주급 (${pay.toLocaleString()}원 × 7일)`,
+        bank:cg.bank||'', account:cg.account||'', holder:cg.bankHolder||cg.name,
+        createdAt:todayStr()
+      });
+      added++;
+    });
+  });
+  saveFinData(); renderSalaryList(); renderPendingList();
+  toast(`✅ ${added}건 급여 일정 등록됐어요`);
+}
+
+function autoAddSalarySchedule(cg, pt) {
+  if(!cg.startDate||!cg.pay) return 0;
+  const pay = Number(cg.pay);
+  if(!pay) return 0;
+  const salDates = calcSalaryDates(cg.startDate, cg.endDate);
+  let added = 0;
+  salDates.forEach(({week, date})=>{
+    const exists = finPending.some(p=>p.cgId===String(cg.id)&&p.payDate===date&&p.type==='salary');
+    if(exists) return;
+    const weekPay = pay*7;
+    finPending.push({
+      id:String(Date.now()+Math.random()), type:'salary',
+      cgId:String(cg.id), cgName:cg.name,
+      patientName:pt?pt.name:'', hospital:cg.hospital||(pt?pt.hospital:''),
+      week, payDate:date, amount:weekPay, status:'예약',
+      desc:`${cg.name} ${week}주차 주급 (${pay.toLocaleString()}원 × 7일)`,
+      bank:cg.bank||'', account:cg.account||'', holder:cg.bankHolder||cg.name,
+      createdAt:todayStr()
+    });
+    added++;
+  });
+  if(added) saveFinData();
+  return added;
+}
+
+function renderSalaryList() {
+  const today = todayStr();
+  const thisMonth = today.substring(0,7);
+  const monthPay = finPending.filter(p=>p.type==='salary'&&p.payDate.startsWith(thisMonth));
+  const totalAmt = monthPay.reduce((s,p)=>s+p.amount,0);
+  const paidAmt  = monthPay.filter(p=>p.status==='지급완료').reduce((s,p)=>s+p.amount,0);
+  const upcoming = finPending.filter(p=>p.type==='salary'&&p.status==='예약'&&p.payDate>=today).length;
+
+  const statsEl = document.getElementById('fin-salary-stats');
+  if(statsEl) statsEl.innerHTML=`
+    <div class="stat"><div class="n" style="color:#0A7C55;font-size:18px">${monthPay.length}건</div><div class="l">이번달 급여</div></div>
+    <div class="stat"><div class="n" style="color:#0A7C55;font-size:16px">${(totalAmt/10000).toFixed(0)}만원</div><div class="l">이번달 총액</div></div>
+    <div class="stat"><div class="n" style="color:var(--teal);font-size:16px">${(paidAmt/10000).toFixed(0)}만원</div><div class="l">지급완료</div></div>
+    <div class="stat"><div class="n" style="color:var(--amber);font-size:18px">${upcoming}건</div><div class="l">지급예정</div></div>`;
+
+  const el = document.getElementById('salary-list');
+  if(!el) return;
+
+  // 간병인별 그룹화
+  const cgMap = {};
+  finPending.filter(p=>p.type==='salary').forEach(p=>{
+    if(!cgMap[p.cgId]) cgMap[p.cgId]={cgName:p.cgName,hospital:p.hospital,patientName:p.patientName,items:[]};
+    cgMap[p.cgId].items.push(p);
+  });
+
+  if(!Object.keys(cgMap).length){
+    el.innerHTML=`<div class="empty"><p>급여 일정이 없어요<br><small style="color:var(--gray)">🔄 자동 계산 버튼을 눌러주세요</small></p></div>`;
+    return;
+  }
+
+  const DAYS=['일','월','화','수','목','금','토'];
+  el.innerHTML=Object.values(cgMap).map(g=>{
+    const items=g.items.sort((a,b)=>a.payDate.localeCompare(b.payDate));
+    return `<div style="padding:.875rem 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px">
+        <div>
+          <span style="font-size:13px;font-weight:700">${g.cgName}</span>
+          <span style="font-size:11px;color:var(--gray);margin-left:6px">${g.patientName}${g.hospital?' · '+g.hospital:''}</span>
+        </div>
+        <span style="font-size:11px;color:#0A7C55;font-weight:700">총 ${items.reduce((s,x)=>s+x.amount,0).toLocaleString()}원</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${items.map(item=>{
+          const d=new Date(item.payDate);
+          const dayLabel=DAYS[d.getDay()];
+          const isOverdue=item.status!=='지급완료'&&item.payDate<today;
+          const isToday=item.payDate===today;
+          return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:${item.status==='지급완료'?'var(--surface2)':isOverdue?'#FFF0F0':isToday?'#FFFBEB':'var(--surface)'};border:1px solid ${isOverdue?'#fca5a5':isToday?'var(--amber)':'var(--border)'};border-radius:var(--rsm);flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:700;color:var(--gray);min-width:32px">${item.week}주차</span>
+            <span style="font-size:12px;font-family:var(--mono);font-weight:600">${item.payDate} <span style="color:var(--gray);font-size:10px">(${dayLabel})</span></span>
+            <span style="font-size:12px;font-weight:700;color:#0A7C55;font-family:var(--mono)">${item.amount.toLocaleString()}원</span>
+            <span class="badge ${item.status==='지급완료'?'b-teal':'b-amber'}" style="font-size:10px">${item.status}${isOverdue?' ⚠️':''}</span>
+            <div style="margin-left:auto;display:flex;gap:4px">
+              ${item.status!=='지급완료'?`<button class="btn btn-sm" style="font-size:10px;padding:3px 8px;border-color:#0A7C55;color:#0A7C55" onclick="markSalaryPaid('${item.id}')">✅ 지급완료</button>`:''}
+              <button class="btn btn-sm btn-red" style="font-size:10px;padding:3px 6px" onclick="delPending('${item.id}')">✕</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function markSalaryPaid(id) {
+  const item = finPending.find(p=>String(p.id)===String(id));
+  if(!item) return;
+  item.status='지급완료'; item.paidAt=todayStr();
+  // 입출금 장부 자동 추가
+  finLedger.unshift({
+    id:String(Date.now()), date:item.payDate, type:'expense',
+    amount:item.amount, desc:item.desc, acct:'급여',
+    note:`${item.week}주차 주급 지급`, createdAt:todayStr()
+  });
+  saveFinData(); renderSalaryList(); renderPendingList(); renderFinLedger();
+  toast(`✅ ${item.cgName} ${item.week}주차 주급 지급완료 처리됐어요`);
+}
+
+function delPending(id) {
+  if(!confirm('삭제할까요?')) return;
+  finPending=finPending.filter(p=>String(p.id)!==String(id));
+  saveFinData(); renderSalaryList(); renderPendingList();
+}
+
+function renderFinLedger() {
+  const moFlt   = document.getElementById('fin-mo-flt')?.value||'';
+  const typeFlt = document.getElementById('fin-type-flt')?.value||'';
+  let list=[...finLedger].sort((a,b)=>b.date.localeCompare(a.date));
+  if(moFlt)   list=list.filter(l=>l.date.substring(5,7)===moFlt);
+  if(typeFlt) list=list.filter(l=>l.type===typeFlt);
+  const inc=list.filter(l=>l.type==='income').reduce((s,l)=>s+l.amount,0);
+  const exp=list.filter(l=>l.type==='expense').reduce((s,l)=>s+l.amount,0);
+  const statsEl=document.getElementById('fin-ledger-stats');
+  if(statsEl) statsEl.innerHTML=`
+    <div class="stat"><div class="n" style="color:#0A7C55;font-size:16px">${(inc/10000).toFixed(0)}만</div><div class="l">총 입금</div></div>
+    <div class="stat"><div class="n" style="color:#dc2626;font-size:16px">${(exp/10000).toFixed(0)}만</div><div class="l">총 출금</div></div>
+    <div class="stat"><div class="n" style="color:var(--teal);font-size:16px">${((inc-exp)/10000).toFixed(0)}만</div><div class="l">잔액</div></div>
+    <div class="stat"><div class="n" style="font-size:18px">${list.length}</div><div class="l">거래 건수</div></div>`;
+  const el=document.getElementById('fin-ledger-list');
+  if(!el) return;
+  if(!list.length){ el.innerHTML='<div class="empty"><p>거래 내역이 없어요</p></div>'; return; }
+  el.innerHTML=list.map(l=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--gray);min-width:80px">${l.date}</div>
+      <span class="badge ${l.type==='income'?'b-green':'b-red'}" style="font-size:10px">${l.type==='income'?'입금':'출금'}</span>
+      <div style="flex:1;min-width:100px">
+        <div style="font-size:12px;font-weight:600">${l.desc}</div>
+        ${l.note?`<div style="font-size:11px;color:var(--gray)">${l.note}</div>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:${l.type==='income'?'#0A7C55':'#dc2626'};font-family:var(--mono)">${l.type==='income'?'+':'-'}${l.amount.toLocaleString()}원</div>
+      <span class="badge b-blue" style="font-size:10px">${l.acct||'기타'}</span>
+      <button class="btn btn-sm btn-red" style="font-size:10px;padding:3px 6px" onclick="delFinLedger('${l.id}')">✕</button>
+    </div>`).join('');
+}
+
+function openFinAdd() {
+  document.getElementById('fin-modal-title').textContent='거래 추가';
+  document.getElementById('fin-edit-id').value='';
+  document.getElementById('fin-date').value=todayStr();
+  document.getElementById('fin-type').value='expense';
+  document.getElementById('fin-amount').value='';
+  document.getElementById('fin-desc').value='';
+  document.getElementById('fin-note').value='';
+  document.getElementById('fin-acct').value='기타';
+  document.getElementById('fin-overlay').classList.add('open');
+}
+
+function saveFinLedger() {
+  const date=document.getElementById('fin-date').value;
+  const amount=Number(document.getElementById('fin-amount').value);
+  const desc=document.getElementById('fin-desc').value.trim();
+  if(!date||!amount||!desc){ toast('날짜·금액·내용은 필수입니다',true); return; }
+  const editId=document.getElementById('fin-edit-id').value;
+  const obj={
+    id:editId||String(Date.now()), date, type:document.getElementById('fin-type').value,
+    amount, desc, acct:document.getElementById('fin-acct').value,
+    note:document.getElementById('fin-note').value.trim(), createdAt:todayStr()
+  };
+  if(editId){ const idx=finLedger.findIndex(l=>String(l.id)===String(editId)); if(idx>-1) finLedger[idx]=obj; }
+  else finLedger.unshift(obj);
+  saveFinData(); closeOverlay('fin-overlay'); renderFinLedger();
+  toast('✅ 거래 저장됐어요');
+}
+
+function delFinLedger(id) {
+  if(!confirm('삭제할까요?')) return;
+  finLedger=finLedger.filter(l=>String(l.id)!==String(id));
+  saveFinData(); renderFinLedger();
+}
+
+function renderPendingList() {
+  const el=document.getElementById('pending-list');
+  if(!el) return;
+  const today=todayStr();
+  const list=[...finPending].sort((a,b)=>a.payDate.localeCompare(b.payDate));
+  if(!list.length){ el.innerHTML='<div class="empty"><p>지출결의 예약이 없어요</p></div>'; return; }
+  const DAYS=['일','월','화','수','목','금','토'];
+  el.innerHTML=list.map(p=>{
+    const d=new Date(p.payDate); const dayLabel=DAYS[d.getDay()];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--gray);min-width:80px">${p.payDate} <span style="color:var(--gray)">(${dayLabel})</span></div>
+      <span class="badge ${p.status==='지급완료'?'b-teal':'b-amber'}" style="font-size:10px">${p.status}</span>
+      <div style="flex:1;min-width:100px">
+        <div style="font-size:12px;font-weight:600">${p.desc}</div>
+        ${p.account?`<div style="font-size:11px;color:var(--gray)">${p.bank} ${p.account} (${p.holder})</div>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:#0A7C55;font-family:var(--mono)">${p.amount.toLocaleString()}원</div>
+      <div style="display:flex;gap:4px">
+        ${p.status!=='지급완료'?`<button class="btn btn-sm" style="font-size:10px;padding:3px 8px;border-color:#0A7C55;color:#0A7C55" onclick="markSalaryPaid('${p.id}')">✅ 지급</button>`:''}
+        <button class="btn btn-sm btn-red" style="font-size:10px;padding:3px 6px" onclick="delPending('${p.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function formatPhone(p) {
   if(!p) return '';
   const d = String(p).replace(/[^0-9]/g,'');
