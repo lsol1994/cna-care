@@ -1319,7 +1319,7 @@ function loadFirebase() {
 
 // ─── Firebase 저장 ───
 function save() {
-  // 로컬 캐시 저장 (오프라인 대비)
+  // 로컬 캐시 저장
   localStorage.setItem('cnc_patients',  JSON.stringify(patients));
   localStorage.setItem('cnc_cg',        JSON.stringify(caregivers));
   localStorage.setItem('cnc_rooms',     JSON.stringify(rooms));
@@ -1328,10 +1328,10 @@ function save() {
   localStorage.setItem('cnc_rptlogs',   JSON.stringify(reportLogs));
   localStorage.setItem('cnc_cfg',       JSON.stringify(cfg));
   localStorage.setItem('cnc_members',   JSON.stringify(members));
-  // Firebase에 저장 (연결된 경우만)
+  // Firebase - update()로 기존 데이터 유지하면서 해당 항목만 업데이트
   if(db) {
     _fbPause = true;
-    db.ref('cnc').set({
+    db.ref('cnc').update({
       patients, caregivers, rooms, logs, attendance, reportLogs, cfg, members
     }).then(()=>{ _fbPause = false; })
       .catch(e=>{ _fbPause = false; console.warn('Firebase 저장 실패:', e); });
@@ -1366,19 +1366,23 @@ function startFirebaseSync() {
         if(_fbPause) return;
         const d = snap.val();
         if(!d) {
+          // Firebase 비어있으면 로컬 데이터 올리기
           if(patients.length || caregivers.length) save();
           _fbReady = true;
           showSyncStatus('연결됨');
           return;
         }
-        if(d.patients)   { patients   = d.patients;   localStorage.setItem('cnc_patients', JSON.stringify(patients)); }
-        if(d.caregivers) { caregivers = d.caregivers; localStorage.setItem('cnc_cg', JSON.stringify(caregivers)); }
+        // 원격 데이터가 더 많을 때만 덮어씀 (빈 배열로 덮어쓰기 방지)
+        if(d.patients   && d.patients.length   >= patients.length)   { patients   = d.patients;   localStorage.setItem('cnc_patients', JSON.stringify(patients)); }
+        if(d.caregivers && d.caregivers.length >= caregivers.length)  { caregivers = d.caregivers; localStorage.setItem('cnc_cg', JSON.stringify(caregivers)); }
         if(d.rooms)      { rooms      = d.rooms;      localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
         if(d.logs)       { logs       = d.logs;       localStorage.setItem('cnc_logs', JSON.stringify(logs)); }
         if(d.attendance) { attendance = d.attendance; localStorage.setItem('cnc_attend', JSON.stringify(attendance)); }
         if(d.reportLogs) { reportLogs = d.reportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
         if(d.cfg)        { cfg        = d.cfg;        localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
         if(d.members)    { members    = d.members;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
+        if(d.finLedger)  { finLedger  = d.finLedger;  localStorage.setItem('cnc_fin_ledger', JSON.stringify(finLedger)); }
+        if(d.finPending) { finPending = d.finPending; localStorage.setItem('cnc_fin_pending', JSON.stringify(finPending)); }
         if(!_fbReady) {
           _fbReady = true;
           showSyncStatus('연결됨');
@@ -3118,8 +3122,8 @@ function saveFinData() {
   localStorage.setItem('cnc_fin_ledger',  JSON.stringify(finLedger));
   localStorage.setItem('cnc_fin_pending', JSON.stringify(finPending));
   if(db) {
-    db.ref('cnc/finLedger').set(finLedger).catch(e=>console.warn('fin save err',e));
-    db.ref('cnc/finPending').set(finPending).catch(e=>console.warn('fin save err',e));
+    db.ref('cnc').update({ finLedger, finPending })
+      .catch(e=>console.warn('fin save err',e));
   }
 }
 
