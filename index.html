@@ -1358,44 +1358,48 @@ function startFirebaseSync() {
         messagingSenderId: "682938308807",
         appId:             "1:682938308807:web:6de27f04f77f2d08ca46e2"
       };
-      // 이미 초기화된 경우 기존 앱 사용
       if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       db = firebase.database();
-      // 리스너 연결
+
       db.ref('cnc').on('value', snap => {
         if(_fbPause) return;
         const d = snap.val();
+
+        // Firebase 비어있으면 로컬 데이터 업로드
         if(!d) {
-          // Firebase 비어있으면 로컬 데이터 올리기
           if(patients.length || caregivers.length) save();
           _fbReady = true;
           showSyncStatus('연결됨');
           return;
         }
-        // 원격 데이터가 더 많을 때만 덮어씀 (빈 배열로 덮어쓰기 방지)
-        if(d.patients   && d.patients.length   >= patients.length)   { patients   = d.patients;   localStorage.setItem('cnc_patients', JSON.stringify(patients)); }
-        if(d.caregivers && d.caregivers.length >= caregivers.length)  { caregivers = d.caregivers; localStorage.setItem('cnc_cg', JSON.stringify(caregivers)); }
-        if(d.rooms)      { rooms      = d.rooms;      localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
-        if(d.logs)       { logs       = d.logs;       localStorage.setItem('cnc_logs', JSON.stringify(logs)); }
-        if(d.attendance) { attendance = d.attendance; localStorage.setItem('cnc_attend', JSON.stringify(attendance)); }
-        if(d.reportLogs) { reportLogs = d.reportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
-        if(d.cfg)        { cfg        = d.cfg;        localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
-        if(d.members)    { members    = d.members;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
-        if(d.finLedger)  { finLedger  = d.finLedger;  localStorage.setItem('cnc_fin_ledger', JSON.stringify(finLedger)); }
-        if(d.finPending) { finPending = d.finPending; localStorage.setItem('cnc_fin_pending', JSON.stringify(finPending)); }
+
+        // 안전하게 덮어쓰기 - Firebase 데이터가 실제로 있는 경우만
+        if(Array.isArray(d.patients)   && d.patients.length   > 0) { patients   = d.patients;   localStorage.setItem('cnc_patients', JSON.stringify(patients)); }
+        if(Array.isArray(d.caregivers) && d.caregivers.length > 0) { caregivers = d.caregivers; localStorage.setItem('cnc_cg', JSON.stringify(caregivers)); }
+        if(Array.isArray(d.rooms)      && d.rooms.length      > 0) { rooms      = d.rooms;      localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
+        if(Array.isArray(d.logs))       { logs       = d.logs;       localStorage.setItem('cnc_logs', JSON.stringify(logs)); }
+        if(Array.isArray(d.attendance)) { attendance = d.attendance; localStorage.setItem('cnc_attend', JSON.stringify(attendance)); }
+        if(Array.isArray(d.reportLogs)) { reportLogs = d.reportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
+        if(Array.isArray(d.members))    { members    = d.members;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
+        if(d.cfg && typeof d.cfg === 'object') { cfg = d.cfg; localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
+        if(Array.isArray(d.finLedger))  { finLedger  = d.finLedger;  localStorage.setItem('cnc_fin_ledger', JSON.stringify(finLedger)); }
+        if(Array.isArray(d.finPending)) { finPending = d.finPending; localStorage.setItem('cnc_fin_pending', JSON.stringify(finPending)); }
+
         if(!_fbReady) {
           _fbReady = true;
           showSyncStatus('연결됨');
-          autoMatch(); updateSidebar(); renderDashboard(); renderRooms(); checkAutoEnd();
+          try { normalizeTimes(); autoMatch(); updateSidebar(); renderDashboard(); renderRooms(); checkAutoEnd(); } catch(e) { console.warn('렌더 오류:', e); }
         } else {
-          const ap = document.querySelector('.page.act')?.id;
-          if(ap==='page-patients')  renderPatients();
-          if(ap==='page-caregiver') renderCaregivers();
-          if(ap==='page-send')      renderSend();
-          if(ap==='page-log')       renderLog();
-          if(ap==='page-report')    renderReport();
-          if(ap==='page-members')   renderMembers();
-          updateSidebar(); renderDashboard();
+          try {
+            const ap = document.querySelector('.page.act')?.id;
+            if(ap==='page-patients')  renderPatients();
+            if(ap==='page-caregiver') renderCaregivers();
+            if(ap==='page-send')      renderSend();
+            if(ap==='page-log')       renderLog();
+            if(ap==='page-report')    renderReport();
+            if(ap==='page-members')   renderMembers();
+            updateSidebar(); renderDashboard();
+          } catch(e) { console.warn('렌더 오류:', e); }
           showSyncStatus('동기화됨');
         }
       }, err => {
@@ -4964,12 +4968,13 @@ function normalizeTimes() {
 }
 
 try {
-  normalizeTimes();
+  // 1. 로컬 데이터로 즉시 렌더링 (Firebase 기다리지 않음)
   autoMatch();
   updateSidebar();
   renderDashboard();
   renderRooms();
   startRemind();
+  // 2. Firebase 백그라운드 연결 (완료 시 자동 갱신)
   startFirebaseSync();
 } catch(e) {
   console.warn('초기화 오류:', e);
