@@ -1590,14 +1590,22 @@ function ptRowHTML(p) {
         <div class="pt-name">${p.name}<span>${p.age?p.age+'세':''} ${p.gender}</span></div>
         <div style="font-size:11px;color:var(--gray);margin-top:2px">${p.createdAt} 등록</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${stBadge(p.status)}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        ${stBadge(p.status)}
+        ${ptDdayBadge(p)}
+      </div>
     </div>
     <div class="pt-meta">
       <span>🏥 <b>${p.hospital}</b></span>
-      <span>📅 <b>${p.startDate||'—'}${getDayLabel(p.startDate)?' ('+getDayLabel(p.startDate)+')':''} ${p.startTime||''}</b></span>
-      ${p.recruitHistory && p.recruitHistory.length ? `<span class="badge b-amber" style="font-size:10px">🔄 ${p.recruitHistory.length}차 재모집</span>` : ''}
       <span>💊 ${p.diagnosis}</span>
-      <span>📆 ${p.duration||'미정'}</span>
+      ${p.recruitHistory && p.recruitHistory.length ? `<span class="badge b-amber" style="font-size:10px">🔄 ${p.recruitHistory.length}차 재모집</span>` : ''}
+    </div>
+    <!-- 시작일/마감일 한눈에 -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:.5rem;flex-wrap:wrap;font-size:12px">
+      <span style="color:var(--teal);font-weight:700">▶ ${p.startDate||'—'} ${p.startTime||''}</span>
+      <span style="color:var(--gray)">→</span>
+      <span style="color:${p.endDate?'#dc2626':'var(--gray-lt)'};font-weight:700">■ ${p.endDate||'미정'} ${p.endDate&&p.endTime?p.endTime:''}</span>
+      <span style="color:var(--gray);font-size:11px">(${p.duration||'기간미정'})</span>
     </div>
     <div class="pt-foot">
       <span class="pt-pay">${pay}</span>
@@ -1907,14 +1915,83 @@ function savePatientEdit(id) {
   openPatient(id);
 }
 
-function changeStatus(id,status) {
-  const p=patients.find(x=>String(x.id)===String(id));
+function changeStatus(id, status) {
+  const p = patients.find(x=>String(x.id)===String(id));
   if(!p) return;
-  p.status=status;
-  if(status==='매칭완료') p.recruited=true;
+
+  // 종료 처리 시 마감일시 입력
+  if(status === '종료') {
+    openEndPatientModal(id);
+    return;
+  }
+
+  p.status = status;
+  if(status === '매칭완료') p.recruited = true;
   save(); renderPatients(); updateSidebar();
   openPatient(id);
   toast(`상태 → "${status}"`);
+}
+
+function openEndPatientModal(id) {
+  const p = patients.find(x=>String(x.id)===String(id));
+  if(!p) return;
+  const today = todayStr();
+  const now   = nowTimeStr();
+
+  document.getElementById('pt-modal-title').textContent = `${p.name} — 종료 처리`;
+  document.getElementById('pt-form-body').innerHTML = `
+    <div style="background:var(--surface2);border-radius:var(--rsm);padding:10px 14px;font-size:12px;color:var(--gray);margin-bottom:1rem;line-height:1.7">
+      간병이 종료되는 날짜와 시간을 입력해주세요.<br>
+      입력한 마감일시가 엑셀 다운로드에 반영됩니다.
+    </div>
+    <div class="g2">
+      <div class="field">
+        <label>마감일 <span class="req">*</span></label>
+        <input type="date" id="end-date" value="${p.endDate||today}">
+      </div>
+      <div class="field">
+        <label>마감시간</label>
+        <input type="time" id="end-time" value="${p.endTime||now}">
+      </div>
+    </div>
+    <div class="field">
+      <label>종료 사유 <span style="font-size:10px;font-weight:400;color:var(--gray)">(선택)</span></label>
+      <input type="text" id="end-reason" placeholder="예: 퇴원, 사망, 기간 만료" value="">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn" style="flex:1;justify-content:center;background:#dc2626;color:#fff;border-color:#dc2626"
+        onclick="confirmEndPatient('${id}')">종료 확정</button>
+      <button class="btn" onclick="openPatient('${id}')">취소</button>
+    </div>`;
+  document.getElementById('pt-overlay').classList.add('open');
+}
+
+function confirmEndPatient(id) {
+  const p = patients.find(x=>String(x.id)===String(id));
+  if(!p) return;
+  const endDate   = document.getElementById('end-date').value;
+  const endTime   = document.getElementById('end-time').value;
+  const endReason = document.getElementById('end-reason').value.trim();
+
+  if(!endDate) { toast('마감일을 입력해주세요', true); return; }
+
+  p.status    = '종료';
+  p.recruited = true;
+  p.endDate   = endDate;
+  p.endTime   = endTime;
+  if(endReason) p.endReason = endReason;
+
+  // 연결된 간병인도 종료 처리
+  const cg = caregivers.find(c=>String(c.patientId)===String(id));
+  if(cg && cg.workStatus !== '종료') {
+    cg.workStatus = '종료';
+    if(!cg.endDate) cg.endDate = endDate;
+    if(!cg.endTime) cg.endTime = endTime;
+  }
+
+  save(); renderPatients(); updateSidebar();
+  closeOverlay('pt-overlay');
+  toast(`✅ ${p.name} 종료 처리됐어요 (${endDate} ${endTime})`);
 }
 
 function deletePatient(id) {
@@ -2537,11 +2614,32 @@ function openEarlyTerminate(cgId) {
   document.getElementById('cg-form-body').innerHTML = `
     <div class="warn-banner" style="margin-bottom:1rem">
       <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      <div>
-        <strong>${cg.name}</strong> 간병인이 중도 종료됩니다.<br>
-        ${pt ? `<span style="color:var(--black)">환자 <strong>${pt.name}</strong>은 자동으로 <strong>모집중</strong>으로 전환돼요.</span>` : ''}
+      <div><strong>${cg.name}</strong> 간병인이 중도 종료됩니다.</div>
+    </div>
+
+    <!-- 종료 유형 선택 -->
+    <div style="margin-bottom:1rem">
+      <label style="font-size:12px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:8px">종료 유형</label>
+      <div style="display:flex;gap:8px">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--rsm);cursor:pointer;font-size:13px;font-weight:600"
+          onclick="selectTermType('recruit')">
+          <input type="radio" name="et-type" id="et-type-recruit" value="recruit" checked style="accent-color:var(--teal)">
+          <div>
+            <div style="color:var(--teal)">🔄 재모집</div>
+            <div style="font-size:10px;font-weight:400;color:var(--gray);margin-top:2px">환자 모집중 복귀 → 새 간병인 구함</div>
+          </div>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--rsm);cursor:pointer;font-size:13px;font-weight:600"
+          onclick="selectTermType('end')">
+          <input type="radio" name="et-type" id="et-type-end" value="end" style="accent-color:#dc2626">
+          <div>
+            <div style="color:#dc2626">🚫 완전 종료</div>
+            <div style="font-size:10px;font-weight:400;color:var(--gray);margin-top:2px">환자·간병인 모두 종료 처리</div>
+          </div>
+        </label>
       </div>
     </div>
+
     <div class="g2">
       <div class="field">
         <label>실제 종료일</label>
@@ -2553,21 +2651,39 @@ function openEarlyTerminate(cgId) {
       </div>
     </div>
     <div class="field">
-      <label>중도 종료 사유</label>
-      <textarea id="et-reason" placeholder="예: 개인 사정으로 인한 중도 퇴사" style="min-height:60px"></textarea>
+      <label>종료 사유</label>
+      <textarea id="et-reason" placeholder="예: 개인 사정으로 인한 중도 퇴사" style="min-height:55px"></textarea>
     </div>
-    <div class="hr"></div>
-    <div style="background:var(--teal-lt);border:1px solid var(--teal-mid);border-radius:var(--rsm);padding:8px 12px;font-size:12px;color:var(--teal);margin-bottom:.875rem">
-      💡 중도종료 후 새 간병인을 등록·매칭하면 <strong>교체보고가 자동 작성</strong>돼요.
+
+    <!-- 재모집 안내 (기본 표시) -->
+    <div id="et-recruit-info" style="background:var(--teal-lt);border:1px solid var(--teal-mid);border-radius:var(--rsm);padding:8px 12px;font-size:12px;color:var(--teal);margin-top:.75rem">
+      💡 중도종료 후 새 간병인을 매칭하면 <strong>교체보고가 자동 작성</strong>돼요.
     </div>
-    <div style="display:flex;gap:8px;margin-top:.5rem">
+    <!-- 완전종료 안내 (숨김) -->
+    <div id="et-end-info" style="display:none;background:#FFF0F0;border:1px solid #fca5a5;border-radius:var(--rsm);padding:8px 12px;font-size:12px;color:#dc2626;margin-top:.75rem">
+      ⚠️ 환자 <strong>${pt?pt.name:''}(${pt?pt.hospital||'':''})</strong>도 함께 <strong>종료</strong> 처리됩니다.
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn btn-amber" style="flex:1;justify-content:center" onclick="confirmEarlyTerminate('${cgId}')">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round"><polyline points="20 6 9 17 4 12"/></svg>
-        중도 종료 확정
+        종료 확정
       </button>
       <button class="btn" onclick="closeOverlay('cg-overlay')">취소</button>
     </div>`;
   document.getElementById('cg-overlay').classList.add('open');
+}
+
+function selectTermType(type) {
+  const recruitInfo = document.getElementById('et-recruit-info');
+  const endInfo     = document.getElementById('et-end-info');
+  if(type === 'recruit') {
+    recruitInfo.style.display = '';
+    endInfo.style.display     = 'none';
+  } else {
+    recruitInfo.style.display = 'none';
+    endInfo.style.display     = '';
+  }
 }
 
 function fillNewCgInfo() {
@@ -2582,10 +2698,7 @@ function confirmEarlyTerminate(cgId) {
   const endDate  = document.getElementById('et-endDate').value;
   const endTime  = document.getElementById('et-endTime').value;
   const reason   = document.getElementById('et-reason').value.trim();
-  const newDate  = '';
-  const newTime  = '';
-  const newCgId  = '';
-  const newCg    = null;
+  const termType = document.querySelector('input[name="et-type"]:checked')?.value || 'recruit';
 
   // 간병인 상태 업데이트
   cg.workStatus = '종료';
@@ -2598,22 +2711,34 @@ function confirmEarlyTerminate(cgId) {
     pt = patients.find(p=>String(p.id)===String(cg.patientId));
     if(pt) {
       const prevCgName = cg.name;
-      pt.status         = '모집중';
-      pt.recruited      = false;
-      pt.caregiverName  = '';
-      pt.recruitStartDate = endDate;
-      // 재모집 이력 누적 저장
-      if(!pt.recruitHistory) pt.recruitHistory = [];
-      pt.recruitHistory.push({
-        endDate,
-        recruitDate: endDate,
-        reason: reason || '',
-        prevCg: prevCgName,
-        recordedAt: new Date().toLocaleDateString('ko-KR')
-      });
-      // 중도종료 사유는 recruitHistory에만 기록 (기타특이사항에 반영 안 함)
-      sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate,
-        caregiverName:'', status:'모집중'});
+
+      if(termType === 'end') {
+        // ── 완전 종료: 환자도 종료 처리 ──
+        pt.status     = '종료';
+        pt.recruited  = true;
+        pt.endDate    = endDate;
+        pt.endTime    = endTime;
+        pt.caregiverName = '';
+        if(reason) pt.endReason = reason;
+        sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate,
+          caregiverName:'', status:'종료'});
+      } else {
+        // ── 재모집: 환자 모집중 복귀 ──
+        pt.status         = '모집중';
+        pt.recruited      = false;
+        pt.caregiverName  = '';
+        pt.recruitStartDate = endDate;
+        if(!pt.recruitHistory) pt.recruitHistory = [];
+        pt.recruitHistory.push({
+          endDate,
+          recruitDate: endDate,
+          reason: reason || '',
+          prevCg: prevCgName,
+          recordedAt: new Date().toLocaleDateString('ko-KR')
+        });
+        sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate,
+          caregiverName:'', status:'모집중'});
+      }
     }
     cg.patientId = '';
   }
@@ -2624,7 +2749,12 @@ function confirmEarlyTerminate(cgId) {
   renderPatients();
   renderDashboard();
   updateSidebar();
-  toast(`✅ ${cg.name} 중도 종료 처리됐어요. 새 간병인을 매칭하면 교체보고가 자동 작성돼요.`);
+
+  if(termType === 'end') {
+    toast(`✅ ${cg.name} 종료 + ${pt?pt.name+' 환자도':'환자도'} 완전 종료 처리됐어요.`);
+  } else {
+    toast(`✅ ${cg.name} 중도 종료 처리됐어요. 새 간병인을 매칭하면 교체보고가 자동 작성돼요.`);
+  }
 }
 
 function editCg(id) {
@@ -3275,6 +3405,53 @@ function downloadMembersCSV(){
   toast('✅ 협회 간병인 목록 다운로드 완료');
 }
 
+// ─── 환자 D-day 배지 ───
+function ptDdayBadge(p) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const badges = [];
+  if(p.startDate && p.status !== '종료') {
+    const sd = new Date(p.startDate); sd.setHours(0,0,0,0);
+    const diff = Math.round((sd - today) / 86400000);
+    if(diff === 0)                    badges.push(`<span class="badge b-teal" style="font-size:10px">▶ D-day 시작!</span>`);
+    else if(diff > 0 && diff <= 3)   badges.push(`<span class="badge b-blue" style="font-size:10px">▶ D-${diff} 시작</span>`);
+  }
+  if(p.endDate && p.status !== '종료') {
+    const ed = new Date(p.endDate); ed.setHours(0,0,0,0);
+    const diff = Math.round((ed - today) / 86400000);
+    if(diff === 0)                    badges.push(`<span class="badge" style="font-size:10px;background:#FEE2E2;color:#dc2626;border:none">■ D-day 마감!</span>`);
+    else if(diff > 0 && diff <= 3)   badges.push(`<span class="badge b-amber" style="font-size:10px">■ D-${diff} 마감</span>`);
+    else if(diff < 0)                 badges.push(`<span class="badge b-gray" style="font-size:10px">■ 마감 ${Math.abs(diff)}일 경과</span>`);
+  }
+  return badges.join('');
+}
+
+// ─── 시작일/마감일 리마인드 ───
+function checkDateRemind() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const alerts = [];
+  patients.filter(p=>p.status!=='종료').forEach(p=>{
+    if(p.startDate) {
+      const diff = Math.round((new Date(p.startDate).setHours(0,0,0,0) - today) / 86400000);
+      if(diff === 0) alerts.push(`▶ <b>${p.name}</b> 오늘 간병 시작! (${p.hospital})`);
+      else if(diff === 1) alerts.push(`▶ <b>${p.name}</b> 내일 간병 시작 (${p.startDate})`);
+    }
+    if(p.endDate) {
+      const diff = Math.round((new Date(p.endDate).setHours(0,0,0,0) - today) / 86400000);
+      if(diff === 0) alerts.push(`■ <b>${p.name}</b> 오늘 간병 마감! (${p.hospital})`);
+      else if(diff === 1) alerts.push(`■ <b>${p.name}</b> 내일 간병 마감 (${p.endDate})`);
+    }
+  });
+  if(alerts.length > 0) {
+    const popup = document.getElementById('remind-popup');
+    document.getElementById('remind-popup-body').innerHTML =
+      `📅 <b>시작/마감 알림</b>\n\n` +
+      alerts.map(a=>`<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.15)">${a}</div>`).join('');
+    popup.style.display = 'block';
+    if(cfg.sound !== false) playBeep();
+    setTimeout(()=>{ popup.style.display='none'; }, 15000);
+  }
+}
+
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function nowTimeStr() {
   const n=new Date();
@@ -3587,9 +3764,12 @@ function startRemind() {
   insuranceTimer = setInterval(checkInsuranceExpiry, 60 * 60 * 1000);
   // 자동 종료 체크 1분마다
   setInterval(checkAutoEnd, 60 * 1000);
+  // 날짜 리마인드 1시간마다
+  setInterval(checkDateRemind, 60 * 60 * 1000);
   // 시작 시 즉시 체크
   setTimeout(checkInsuranceExpiry, 3000);
   setTimeout(checkAutoEnd, 2000);
+  setTimeout(checkDateRemind, 5000); // 앱 시작 시 날짜 알림
 }
 
 // ─── 자동 종료 처리 ───
@@ -3874,16 +4054,23 @@ function downloadXLSX(filename, sheetsObj) {
 function getPatientsData() {
   const headers = ['NO.','날짜','성함','주민등록번호','성별','연락처',
     '병원(병동,호수)','질환/상태','특이사항/요청사항','매칭 간병인',
-    '진행상태','간병비','예정기간','시작일','시작시간','마감일','마감시간'];
-  const rows = patients.map((p,i)=>[
-    i+1, p.createdAt||'', p.name||'', '', p.gender||'',
-    formatPhone(String(p.contact||'')),  // 전화번호 → 텍스트
-    p.hospital||'',
-    [p.diagnosis,p.surgery!=='수술 없음'?p.surgery:'',p.diaper?'기저귀착용':'',p.move?'거동가능':'거동불가'].filter(Boolean).join(' / '),
-    p.request||p.extra||'', p.caregiverName||'', p.status||'',
-    p.pay?Number(p.pay).toLocaleString()+'원':'', p.duration||'',
-    p.startDate||'', p.startTime||'', '', ''
-  ]);
+    '진행상태','간병비','예정기간','시작일','시작시간','마감일','마감시간','종료사유'];
+  const rows = patients.map((p,i)=>{
+    // 마감일시: 환자 endDate 우선, 없으면 매칭 간병인 endDate
+    const cg = caregivers.find(c=>String(c.patientId)===String(p.id));
+    const endDate = p.endDate || (cg ? cg.endDate : '') || '';
+    const endTime = p.endTime || (cg ? cg.endTime : '') || '';
+    return [
+      i+1, p.createdAt||'', p.name||'', '', p.gender||'',
+      formatPhone(String(p.contact||'')),
+      p.hospital||'',
+      [p.diagnosis, p.surgery&&p.surgery!==''?p.surgery:'',
+       p.diaper?'기저귀착용':'', p.move?'거동가능':'거동불가'].filter(Boolean).join(' / '),
+      p.request||p.extra||'', p.caregiverName||'', p.status||'',
+      p.pay?Number(p.pay).toLocaleString()+'원':'', p.duration||'',
+      p.startDate||'', p.startTime||'', endDate, endTime, p.endReason||''
+    ];
+  });
   return {headers, rows};
 }
 
