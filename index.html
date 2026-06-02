@@ -1943,14 +1943,13 @@ function changeStatus(id, status) {
 function openEndPatientModal(id) {
   const p = patients.find(x=>String(x.id)===String(id));
   if(!p) return;
-  const today = todayStr();
-  const now   = nowTimeStr();
+  const today = new Date().toISOString().split('T')[0];
+  const now   = new Date().toTimeString().slice(0,5);
 
   document.getElementById('pt-modal-title').textContent = `${p.name} — 종료 처리`;
   document.getElementById('pt-modal-body').innerHTML = `
     <div style="background:var(--surface2);border-radius:var(--rsm);padding:10px 14px;font-size:12px;color:var(--gray);margin-bottom:1rem;line-height:1.7">
-      간병이 종료되는 날짜와 시간을 입력해주세요.<br>
-      입력한 마감일시가 엑셀 다운로드에 반영됩니다.
+      간병이 종료되는 날짜와 시간을 입력해주세요.
     </div>
     <div class="g2">
       <div class="field">
@@ -1964,24 +1963,32 @@ function openEndPatientModal(id) {
     </div>
     <div class="field">
       <label>종료 사유 <span style="font-size:10px;font-weight:400;color:var(--gray)">(선택)</span></label>
-      <input type="text" id="end-reason" placeholder="예: 퇴원, 사망, 기간 만료" value="">
+      <input type="text" id="end-reason" placeholder="예: 퇴원, 사망, 기간 만료">
     </div>
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn" style="flex:1;justify-content:center;background:#dc2626;color:#fff;border-color:#dc2626"
-        onclick="confirmEndPatient('${id}')">종료 확정</button>
-      <button class="btn" onclick="openPatient('${id}')">취소</button>
+        onclick="confirmEndPatient('${p.id}')">종료 확정</button>
+      <button class="btn" onclick="openPatient('${p.id}')">취소</button>
     </div>`;
   document.getElementById('pt-overlay').classList.add('open');
 }
 
 function confirmEndPatient(id) {
-  const p = patients.find(x=>String(x.id)===String(id));
-  if(!p) return;
-  const endDate   = document.getElementById('end-date').value;
-  const endTime   = document.getElementById('end-time').value;
-  const endReason = document.getElementById('end-reason').value.trim();
+  // DOM에서 먼저 값 읽기
+  const endDateEl   = document.getElementById('end-date');
+  const endTimeEl   = document.getElementById('end-time');
+  const endReasonEl = document.getElementById('end-reason');
+
+  if(!endDateEl) { toast('오류: 날짜 입력을 찾을 수 없어요', true); return; }
+
+  const endDate   = endDateEl.value;
+  const endTime   = endTimeEl ? endTimeEl.value : '';
+  const endReason = endReasonEl ? endReasonEl.value.trim() : '';
 
   if(!endDate) { toast('마감일을 입력해주세요', true); return; }
+
+  const p = patients.find(x=>String(x.id)===String(id));
+  if(!p) { toast('환자를 찾을 수 없어요', true); return; }
 
   p.status    = '종료';
   p.recruited = true;
@@ -1989,7 +1996,7 @@ function confirmEndPatient(id) {
   p.endTime   = endTime;
   if(endReason) p.endReason = endReason;
 
-  // 연결된 간병인도 종료 처리
+  // 연결된 간병인도 종료
   const cg = caregivers.find(c=>String(c.patientId)===String(id));
   if(cg && cg.workStatus !== '종료') {
     cg.workStatus = '종료';
@@ -1997,9 +2004,11 @@ function confirmEndPatient(id) {
     if(!cg.endTime) cg.endTime = endTime;
   }
 
-  save(); renderPatients(); updateSidebar();
-  closeOverlay('pt-overlay');
-  toast(`✅ ${p.name} 종료 처리됐어요 (${endDate} ${endTime})`);
+  save();
+  document.getElementById('pt-overlay').classList.remove('open');
+  renderPatients();
+  updateSidebar();
+  toast(`✅ ${p.name} 종료 처리됐어요 (${endDate}${endTime?' '+endTime:''})`);
 }
 
 function deletePatient(id) {
