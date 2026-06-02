@@ -1284,7 +1284,16 @@ function startFirebaseSync() {
         }
 
         // 안전하게 덮어쓰기 - Firebase 데이터가 실제로 있는 경우만
-        if(Array.isArray(d.patients)   && d.patients.length   > 0) { patients   = d.patients;   localStorage.setItem('cnc_patients', JSON.stringify(patients)); }
+        if(Array.isArray(d.patients) && d.patients.length > 0) {
+          // 로컬에서 종료 처리한 환자는 보호 (Firebase가 이전 상태로 덮어쓰기 방지)
+          const merged = d.patients.map(dp => {
+            const local = patients.find(lp=>String(lp.id)===String(dp.id));
+            if(local && local.status==='종료' && dp.status!=='종료') return local;
+            return dp;
+          });
+          patients = merged;
+          localStorage.setItem('cnc_patients', JSON.stringify(patients));
+        }
         if(Array.isArray(d.caregivers) && d.caregivers.length > 0) { caregivers = d.caregivers; localStorage.setItem('cnc_cg', JSON.stringify(caregivers)); }
         if(Array.isArray(d.rooms)      && d.rooms.length      > 0) { rooms      = d.rooms;      localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
         if(Array.isArray(d.logs))       { logs       = d.logs;       localStorage.setItem('cnc_logs', JSON.stringify(logs)); }
@@ -1974,7 +1983,6 @@ function openEndPatientModal(id) {
 }
 
 function confirmEndPatient(id) {
-  // DOM에서 먼저 값 읽기
   const endDateEl   = document.getElementById('end-date');
   const endTimeEl   = document.getElementById('end-time');
   const endReasonEl = document.getElementById('end-reason');
@@ -1990,6 +1998,7 @@ function confirmEndPatient(id) {
   const p = patients.find(x=>String(x.id)===String(id));
   if(!p) { toast('환자를 찾을 수 없어요', true); return; }
 
+  // 상태 변경
   p.status    = '종료';
   p.recruited = true;
   p.endDate   = endDate;
@@ -2004,11 +2013,34 @@ function confirmEndPatient(id) {
     if(!cg.endTime) cg.endTime = endTime;
   }
 
+  // 종료보고 자동 생성
+  const now2 = new Date();
+  const timeStr = now2.toLocaleDateString('ko-KR') + ' ' +
+    now2.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', hour12:false});
+  const endMsg = buildEndReport(p);
+  reportLogs.unshift({
+    patientId:   String(p.id),
+    patientName: p.name,
+    type:        'ended',
+    time:        timeStr,
+    msg:         endMsg,
+    auto:        true
+  });
+
+  // Firebase 덮어쓰기 방지 후 저장
+  _fbPause = true;
   save();
+
+  // 모달 닫기 + UI 갱신
   document.getElementById('pt-overlay').classList.remove('open');
   renderPatients();
+  renderDashboard();
   updateSidebar();
-  toast(`✅ ${p.name} 종료 처리됐어요 (${endDate}${endTime?' '+endTime:''})`);
+
+  // 1초 후 pause 해제 (Firebase 저장 완료 대기)
+  setTimeout(() => { _fbPause = false; }, 1000);
+
+  toast(`✅ ${p.name} 종료 처리됐어요 (${endDate}${endTime ? ' ' + endTime : ''})`);
 }
 
 function deletePatient(id) {
