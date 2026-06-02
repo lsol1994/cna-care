@@ -4616,18 +4616,19 @@ function parseCSVFile(filename, text) {
 function autoMatch() {
   let count = 0;
 
-  // ① 환자에 caregiverName이 있으면 → 즉시 구인완료 + 매칭완료
+  // ① 환자에 caregiverName이 있으면 → 즉시 구인완료 + 매칭완료 (종료 환자 제외)
   patients.forEach(p => {
+    if(p.status === '종료') return; // 종료 환자 스킵
     if(!p.caregiverName || p.caregiverName.trim() === '') return;
-    // 이미 매칭완료면 스킵
     if(p.status === '매칭완료' && p.recruited) return;
     p.status    = '매칭완료';
     p.recruited = true;
     count++;
   });
 
-  // ② 간병인-환자 patientId 연결 (caregiverName 기준)
+  // ② 간병인-환자 patientId 연결 (caregiverName 기준, 종료 환자 제외)
   patients.forEach(p => {
+    if(p.status === '종료') return; // 종료 환자 스킵
     if(!p.caregiverName) return;
     const cgName = p.caregiverName.trim();
     const cg = caregivers.find(c =>
@@ -4642,11 +4643,12 @@ function autoMatch() {
     count++;
   });
 
-  // ③ 반대 방향: 간병인 patientId → 환자 caregiverName 없을 때
+  // ③ 반대 방향: 간병인 patientId → 환자 (종료 환자 제외)
   caregivers.forEach(c => {
     if(!c.patientId) return;
     const pt = patients.find(p => String(p.id) === String(c.patientId));
     if(!pt) return;
+    if(pt.status === '종료') return; // 종료 환자 절대 건드리지 않음
     let changed = false;
     if(!pt.caregiverName) { pt.caregiverName = c.name; changed = true; }
     if(pt.status !== '매칭완료') { pt.status = '매칭완료'; changed = true; }
@@ -4654,12 +4656,11 @@ function autoMatch() {
     if(changed) count++;
   });
 
-  // ④ 매칭된 쌍끼리 마감일/시간 동기화 (간병인 기준 → 환자에 반영)
+  // ④ 매칭된 쌍끼리 마감일/시간 동기화 (종료 환자 제외)
   caregivers.forEach(c => {
     if(!c.patientId || !c.endDate) return;
     const pt = patients.find(p=>String(p.id)===String(c.patientId));
-    if(!pt) return;
-    // 환자 마감일이 다르면 간병인 것으로 맞춤
+    if(!pt || pt.status === '종료') return; // 종료 환자 제외
     if(pt.endDate !== c.endDate || pt.endTime !== c.endTime) {
       pt.endDate = c.endDate;
       pt.endTime = c.endTime || '';
@@ -4667,11 +4668,10 @@ function autoMatch() {
     }
   });
 
-  // ⑤ 매칭완료인데 실제 연결된 간병인이 없으면 → 모집중 복구
+  // ⑤ 매칭완료인데 실제 연결된 간병인이 없으면 → 모집중 복구 (종료 환자 제외)
   patients.forEach(p => {
-    if(p.status === '종료') return; // 종료된 환자는 스킵
+    if(p.status === '종료') return; // 종료 환자 절대 건드리지 않음
     if(p.status !== '매칭완료' && p.recruited !== true) return;
-    // caregiverName이 없거나, 해당 이름의 간병인이 존재하지 않으면
     const hasCgByName = p.caregiverName &&
       caregivers.some(c => c.name === p.caregiverName.trim());
     const hasCgById = caregivers.some(c => String(c.patientId) === String(p.id));
