@@ -575,7 +575,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <!-- 검색창 -->
       <div style="position:relative;display:flex;align-items:center">
         <svg viewBox="0 0 24 24" style="position:absolute;left:9px;width:14px;height:14px;stroke:var(--gray-lt);stroke-width:2;fill:none;stroke-linecap:round;pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="pt-search" placeholder="이름·병원·병증 검색..." oninput="renderPatients()"
+        <input type="text" id="pt-search" placeholder="이름·병원·전화번호 검색..." oninput="renderPatients()"
           style="padding:6px 10px 6px 28px;font-size:12px;width:180px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface);color:var(--black)">
         <button id="pt-search-clear" onclick="document.getElementById('pt-search').value='';renderPatients()" style="display:none;position:absolute;right:7px;background:none;border:none;cursor:pointer;color:var(--gray-lt);font-size:14px;line-height:1">✕</button>
       </div>
@@ -615,7 +615,13 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   </div>
   <div class="sticky-col">
     <div class="card">
-      <div class="card-hd"><span class="dot"></span>단톡방 목록</div>
+      <div class="card-hd" style="justify-content:space-between">
+        <div><span class="dot"></span>단톡방 목록</div>
+        <button class="btn btn-sm btn-teal" onclick="bulkLogAll()" title="모든 단톡방에 발송 기록 일괄 저장">
+          <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+          일괄 기록
+        </button>
+      </div>
       <div id="room-list"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
         <input type="text" id="room-input" placeholder="단톡방 이름 추가..." style="flex:1;font-size:12px;padding:7px 9px">
@@ -633,7 +639,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <!-- 검색창 -->
       <div style="position:relative;display:flex;align-items:center">
         <svg viewBox="0 0 24 24" style="position:absolute;left:9px;width:14px;height:14px;stroke:var(--gray-lt);stroke-width:2;fill:none;stroke-linecap:round;pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="cg-search" placeholder="이름·병원·특화분야 검색..." oninput="renderCaregivers()"
+        <input type="text" id="cg-search" placeholder="이름·전화번호·특화분야 검색..." oninput="renderCaregivers()"
           style="padding:6px 10px 6px 28px;font-size:12px;width:190px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface);color:var(--black)">
         <button id="cg-search-clear" onclick="document.getElementById('cg-search').value='';renderCaregivers()" style="display:none;position:absolute;right:7px;background:none;border:none;cursor:pointer;color:var(--gray-lt);font-size:14px;line-height:1">✕</button>
       </div>
@@ -1633,11 +1639,13 @@ function renderPatients() {
 
   let list = flt ? patients.filter(p=>p.status===flt) : [...patients];
   if(q) {
+    const qNum = q.replace(/[^0-9]/g,''); // 숫자만
     list = list.filter(p =>
       (p.name||'').toLowerCase().includes(q) ||
       (p.hospital||'').toLowerCase().includes(q) ||
       (p.diagnosis||'').toLowerCase().includes(q) ||
       (p.contact||'').toLowerCase().includes(q) ||
+      (qNum && (p.contact||'').replace(/[^0-9]/g,'').includes(qNum)) ||
       (p.caregiverName||'').toLowerCase().includes(q)
     );
   }
@@ -2195,6 +2203,33 @@ document.getElementById('room-input').addEventListener('keydown',e=>{if(e.key===
 function removeRoom(i){rooms.splice(i,1);save();renderRooms();}
 
 // 복사만 (기록 없음)
+// 모든 단톡방 일괄 기록
+function bulkLogAll() {
+  if(!selPt) { toast('환자를 먼저 선택해주세요', true); return; }
+  if(!rooms.length) { toast('단톡방 목록이 없어요', true); return; }
+
+  const txt = getSendText();
+  if(!txt) { toast('공고 내용이 없어요', true); return; }
+
+  const now = new Date();
+  const timeStr = now.toLocaleDateString('ko-KR') + ' ' +
+    now.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', hour12:false});
+
+  rooms.forEach(room => {
+    logs.unshift({
+      room,
+      patientId:   selPt.id,
+      patientName: selPt.name,
+      time:        timeStr
+    });
+  });
+
+  save();
+  doCopy(txt);
+  renderRooms();
+  toast(`✅ 전체 ${rooms.length}개 단톡방 발송 기록 완료! 공고가 클립보드에 복사됐어요.`);
+}
+
 function copyOnlyRoom(roomName) {
   const txt = getSendText();
   if(!txt){toast('환자를 먼저 선택해주세요',true);return;}
@@ -2506,13 +2541,17 @@ function renderCaregivers() {
 
   let list = [...caregivers];
   if(flt)  list = list.filter(c=>c.workStatus===flt);
-  if(q)    list = list.filter(c=>
-    (c.name||'').toLowerCase().includes(q) ||
-    (c.hospital||'').toLowerCase().includes(q) ||
-    (c.specialty||'').toLowerCase().includes(q) ||
-    (c.phone||'').toLowerCase().includes(q) ||
-    (c.region||'').toLowerCase().includes(q)
-  );
+  if(q) {
+    const qNum = q.replace(/[^0-9]/g,'');
+    list = list.filter(c=>
+      (c.name||'').toLowerCase().includes(q) ||
+      (c.hospital||'').toLowerCase().includes(q) ||
+      (c.specialty||'').toLowerCase().includes(q) ||
+      (c.phone||'').toLowerCase().includes(q) ||
+      (qNum && (c.phone||'').replace(/[^0-9]/g,'').includes(qNum)) ||
+      (c.region||'').toLowerCase().includes(q)
+    );
+  }
 
   const el = document.getElementById('cg-list');
   if(!list.length) {
