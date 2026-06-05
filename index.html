@@ -1263,8 +1263,7 @@ function startFirebaseSync() {
   showSyncStatus('연결 중...');
   loadFirebase().then(ok => {
     if(!ok || typeof firebase === 'undefined') {
-      showSyncStatus('오프라인 모드');
-      return;
+      showSyncStatus('오프라인 모드'); return;
     }
     try {
       const firebaseConfig = {
@@ -1291,14 +1290,22 @@ function startFirebaseSync() {
           return;
         }
 
-        // Firebase는 배열을 객체로 저장할 수 있으므로 변환 필요
+        // ── Firebase 배열/객체 → 안전한 배열 변환 ──
+        // Firebase Realtime DB는 배열을 {0:.., 1:.., 2:..} 객체로 저장할 수 있음
         function fbToArr(val) {
           if(!val) return [];
-          if(Array.isArray(val)) return val.filter(Boolean);
-          if(typeof val === 'object') return Object.values(val).filter(Boolean);
+          if(Array.isArray(val)) return val.filter(x=>x!=null);
+          if(typeof val === 'object') {
+            // 숫자 키 정렬 후 배열로 변환 (순서 보장)
+            return Object.keys(val)
+              .sort((a,b)=>Number(a)-Number(b))
+              .map(k=>val[k])
+              .filter(x=>x!=null);
+          }
           return [];
         }
 
+        // ── 모든 데이터 변환 ──
         const fbPatients   = fbToArr(d.patients);
         const fbCaregivers = fbToArr(d.caregivers);
         const fbRooms      = fbToArr(d.rooms);
@@ -1307,49 +1314,84 @@ function startFirebaseSync() {
         const fbReportLogs = fbToArr(d.reportLogs);
         const fbMembers    = fbToArr(d.members);
 
-        // patients - 종료 상태 보호
+        // ── patients: 종료 상태 보호 ──
         if(fbPatients.length > 0) {
           patients = fbPatients.map(dp => {
+            if(!dp) return null;
             const local = patients.find(lp=>String(lp.id)===String(dp.id));
+            // 로컬에서 종료 처리했으면 유지
             if(local && local.status==='종료' && dp.status!=='종료') return local;
             return dp;
-          });
+          }).filter(Boolean);
           localStorage.setItem('cnc_patients', JSON.stringify(patients));
         }
 
-        // caregivers - 보험 데이터 보호
+        // ── caregivers: 보험 데이터 + workStatus 보호 ──
         if(fbCaregivers.length > 0) {
           caregivers = fbCaregivers.map(dc => {
+            if(!dc) return null;
             const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
             if(!local) return dc;
+            // 로컬에 보험 데이터 있고 Firebase에 없으면 로컬 것 유지
             if(local.insuranceActive && !dc.insuranceActive) {
               dc.insuranceActive     = local.insuranceActive;
               dc.insuranceExpiry     = local.insuranceExpiry;
               dc.insuranceMemo       = local.insuranceMemo;
               dc.insuranceTerminated = local.insuranceTerminated;
             }
+            // 로컬에서 종료 처리됐으면 유지
+            if(local.workStatus==='종료' && dc.workStatus!=='종료') {
+              dc.workStatus = local.workStatus;
+            }
             return dc;
-          });
+          }).filter(Boolean);
           localStorage.setItem('cnc_cg', JSON.stringify(caregivers));
         }
 
-        // attendance - 더 많은 쪽 유지
+        // ── attendance: 더 많은 쪽 유지 ──
         if(fbAttendance.length > 0) {
-          if(fbAttendance.length >= attendance.length) attendance = fbAttendance;
+          attendance = fbAttendance.length >= attendance.length
+            ? fbAttendance : attendance;
           localStorage.setItem('cnc_attend', JSON.stringify(attendance));
         }
 
-        if(fbRooms.length > 0)      { rooms      = fbRooms;      localStorage.setItem('cnc_rooms',   JSON.stringify(rooms)); }
-        if(fbLogs.length > 0)       { logs       = fbLogs;       localStorage.setItem('cnc_logs',    JSON.stringify(logs)); }
-        if(fbReportLogs.length > 0) { reportLogs = fbReportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
-        if(fbMembers.length > 0)    { members    = fbMembers;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
-        if(d.cfg && typeof d.cfg === 'object') { cfg = d.cfg; localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
+        // ── 나머지 데이터: 있는 것만 덮어씀 ──
+        if(fbRooms.length > 0) {
+          rooms = fbRooms;
+          localStorage.setItem('cnc_rooms', JSON.stringify(rooms));
+        }
+        if(fbLogs.length > 0) {
+          logs = fbLogs;
+          localStorage.setItem('cnc_logs', JSON.stringify(logs));
+        }
+        if(fbReportLogs.length > 0) {
+          reportLogs = fbReportLogs;
+          localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs));
+        }
+        if(fbMembers.length > 0) {
+          members = fbMembers;
+          localStorage.setItem('cnc_members', JSON.stringify(members));
+        }
+        if(d.cfg && typeof d.cfg === 'object') {
+          cfg = d.cfg;
+          localStorage.setItem('cnc_cfg', JSON.stringify(cfg));
+        }
 
+        // ── 첫 로드 완료 ──
         if(!_fbReady) {
           _fbReady = true;
           showSyncStatus('연결됨');
-          try { normalizeTimes(); autoMatch(); updateSidebar(); renderDashboard(); renderRooms(); checkAutoEnd(); } catch(e) { console.warn('렌더 오류:', e); }
+          try {
+            normalizeTimes();
+            autoMatch();
+            updateSidebar();
+            renderDashboard();
+            renderRooms();
+            checkAutoEnd();
+            setTimeout(autoFillAllAttendance, 1000); // 간병일지 자동 채우기
+          } catch(e) { console.warn('렌더 오류:', e); }
         } else {
+          // ── 다른 기기에서 변경 감지 → 현재 탭 갱신 ──
           try {
             const ap = document.querySelector('.page.act')?.id;
             if(ap==='page-patients')  renderPatients();
@@ -1358,7 +1400,8 @@ function startFirebaseSync() {
             if(ap==='page-log')       renderLog();
             if(ap==='page-report')    renderReport();
             if(ap==='page-members')   renderMembers();
-            updateSidebar(); renderDashboard();
+            updateSidebar();
+            renderDashboard();
           } catch(e) { console.warn('렌더 오류:', e); }
           showSyncStatus('동기화됨');
         }
@@ -3755,20 +3798,11 @@ function autoSave() {
 }
 
 // ─── 출퇴근 자동 채우기 ───
-function autoFillAttendance(cgId) {
+// 종료 시 마감일까지 포함해서 간병일지 채우기
+function autoFillAttendanceUntilEnd(cgId, endDate) {
   const cg = caregivers.find(c=>String(c.id)===String(cgId));
-  if(!cg || !cg.startDate) return 0;
+  if(!cg || !cg.startDate || !endDate) return 0;
 
-  const today   = todayStr();
-  const endDate = cg.endDate || today;
-
-  const start     = new Date(cg.startDate);
-  const end       = new Date(endDate);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const fillEnd = end < yesterday ? end : yesterday;
-
-  // 첫 실제 출근 기록 날짜 (auto가 아닌 실제 체크)
   const realRecs = attendance.filter(a=>
     a.cgId===String(cgId) && a.inTime && a.inTime!=='00:00' && !a.auto
   );
@@ -3778,27 +3812,79 @@ function autoFillAttendance(cgId) {
 
   const fillStart = firstRealDate ? new Date(firstRealDate) : new Date(cg.startDate);
   fillStart.setDate(fillStart.getDate() + 1);
+  const fillEnd = new Date(endDate);
 
   let added = 0;
   const cur = new Date(fillStart);
 
   while(cur <= fillEnd) {
     const dateStr = cur.toISOString().split('T')[0];
-    // 신/구버전 모두 체크해서 기존 기록 있으면 절대 덮어쓰지 않음
-    const exists = attendance.find(a=>
-      a.cgId===String(cgId) &&
-      (a.inDate===dateStr || a.date===dateStr)
+    const existing = attendance.find(a=>
+      a.cgId===String(cgId) && (a.inDate===dateStr || a.date===dateStr)
     );
-    if(!exists) {
+    if(!existing) {
+      const isLastDay = dateStr === endDate;
       attendance.push({
-        cgId:    String(cgId),
-        inDate:  dateStr,
-        inTime:  '00:00',
-        outDate: dateStr,
-        outTime: '23:59',
-        auto:    true
+        cgId: String(cgId), inDate: dateStr, inTime: '00:00',
+        outDate: dateStr, outTime: isLastDay ? (cg.endTime||'23:59') : '23:59',
+        auto: true
       });
       added++;
+    } else if(existing && !existing.outTime && dateStr === endDate) {
+      // 마지막날 퇴근 미등록이면 마감시간으로 자동 입력
+      existing.outDate = dateStr;
+      existing.outTime = cg.endTime || '23:59';
+      added++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return added;
+}
+
+function autoFillAttendance(cgId) {
+  const cg = caregivers.find(c=>String(c.id)===String(cgId));
+  if(!cg || !cg.startDate) return 0;
+
+  const today   = todayStr();
+  const endDate = cg.endDate || today;
+  const fillEnd = new Date(endDate);
+  let added = 0;
+  const cur = new Date(cg.startDate);
+
+  while(cur <= fillEnd) {
+    const dateStr = cur.toISOString().split('T')[0];
+    const isFirst = dateStr === cg.startDate;
+    const isLast  = dateStr === endDate && !!cg.endDate;
+
+    const existing = attendance.find(a=>
+      a.cgId===String(cgId) && (a.inDate===dateStr || a.date===dateStr)
+    );
+
+    if(!existing) {
+      if(!isFirst) {
+        // 첫날 제외하고 자동 생성
+        attendance.push({
+          cgId:    String(cgId),
+          inDate:  dateStr,
+          inTime:  '00:00',
+          outDate: dateStr,
+          outTime: (isLast && cg.endTime) ? cg.endTime : '23:59',
+          auto:    true
+        });
+        added++;
+      }
+    } else {
+      // 퇴근 미등록이면 자동 채움
+      if(existing.inTime && !existing.outTime) {
+        existing.outDate = dateStr;
+        existing.outTime = (isLast && cg.endTime) ? cg.endTime : '23:59';
+        added++;
+      }
+      // 자동 기록이고 마감일이면 퇴근시간 업데이트
+      if(existing.auto && isLast && cg.endTime && existing.outTime !== cg.endTime) {
+        existing.outTime = cg.endTime;
+        added++;
+      }
     }
     cur.setDate(cur.getDate() + 1);
   }
@@ -3809,12 +3895,14 @@ function autoFillAttendance(cgId) {
 
 function autoFillAllAttendance() {
   let total = 0;
-  caregivers.filter(c=>c.workStatus==='근무중').forEach(c=>{
+  // 근무중 + 종료 모두 포함 (startDate 있는 간병인 전체)
+  caregivers.filter(c=>c.startDate).forEach(c=>{
     total += autoFillAttendance(String(c.id));
   });
-  if(total > 0) renderAttendance();
+  if(total > 0) { save(); renderAttendance(); }
   return total;
 }
+
 
 function checkIn(cgId) {
   const selDate = getAttendDate();
@@ -4041,12 +4129,14 @@ function checkAutoEnd() {
     const endDt = calcEndDt(cg.endDate, cg.endTime);
     if(!endDt || now < endDt) return;
 
+    // 종료 처리 전에 마감일까지 간병일지 자동 채우기 (퇴근 미등록 날 포함)
+    autoFillAttendanceUntilEnd(String(cg.id), cg.endDate);
+
     cg.workStatus = '종료';
     changed = true;
 
     const pt = cg.patientId ? patients.find(p=>String(p.id)===String(cg.patientId)) : null;
     if(pt && pt.status !== '종료') {
-      // 환자 마감일/시간 간병인과 동일하게 설정
       pt.endDate  = cg.endDate;
       pt.endTime  = cg.endTime;
       pt.status   = '종료';
