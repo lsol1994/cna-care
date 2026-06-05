@@ -681,11 +681,11 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <div class="card" style="margin-bottom:1rem">
     <div class="card-hd" style="justify-content:space-between">
       <div><span class="dot"></span>🛡 배상보험 현황</div>
-      <div style="display:flex;gap:5px">
-        <button id="ins-flt-all"      class="btn btn-sm" onclick="setInsFlt('all')"      style="font-size:11px">전체</button>
-        <button id="ins-flt-none"     class="btn btn-sm btn-teal" onclick="setInsFlt('none')"     style="font-size:11px">가입전</button>
-        <button id="ins-flt-active"   class="btn btn-sm btn-teal" onclick="setInsFlt('active')"   style="font-size:11px">가입</button>
-        <button id="ins-flt-expired"  class="btn btn-sm" onclick="setInsFlt('expired')"  style="font-size:11px">만료</button>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button id="ins-flt-all"     class="btn btn-sm" onclick="setInsFlt('all')"     style="font-size:11px">전체</button>
+        <button id="ins-flt-none"    class="btn btn-sm btn-teal" onclick="setInsFlt('none')"    style="font-size:11px">가입전</button>
+        <button id="ins-flt-active"  class="btn btn-sm btn-teal" onclick="setInsFlt('active')"  style="font-size:11px">가입</button>
+        <button id="ins-flt-expired" class="btn btn-sm" onclick="setInsFlt('expired')" style="font-size:11px">만료</button>
       </div>
     </div>
     <div id="insurance-list">
@@ -3612,11 +3612,11 @@ function renderAttendance() {
   const lbl = document.getElementById('today-date-lbl');
   if(lbl) lbl.textContent = dateLabel + (isToday?' (오늘)':'');
 
-  // 선택 날짜에 출퇴근 기록 있는 간병인 + 간병 기간 내 포함 간병인
+  // 선택 날짜에 출퇴근 기록 있는 간병인 + 간병 기간 내 포함 간병인 (종료 포함)
   const allCg = caregivers.filter(c => {
-    if(isToday) return c.workStatus === '근무중';
-    // inDate 또는 outDate가 선택 날짜인 기록
-    const hasRecord = attendance.some(a=>a.cgId===String(c.id)&&(a.inDate===selDate||a.outDate===selDate));
+    if(isToday) return c.workStatus === '근무중'; // 오늘은 근무중만
+    // 과거: 해당 날짜에 기록 있으면 종료자도 표시
+    const hasRecord = attendance.some(a=>a.cgId===String(c.id)&&(a.inDate===selDate||a.outDate===selDate||a.date===selDate));
     const inPeriod  = c.startDate && c.endDate && selDate >= c.startDate && selDate <= c.endDate;
     return hasRecord || inPeriod;
   });
@@ -3859,22 +3859,14 @@ let insFlt = 'default'; // default=가입전+가입, all, none, active, expired
 
 function setInsFlt(flt) {
   insFlt = flt;
-  // 버튼 스타일
   ['all','none','active','expired'].forEach(t=>{
     const btn = document.getElementById('ins-flt-'+t);
     if(!btn) return;
-    const isActive = (flt==='default' && (t==='none'||t==='active')) || flt===t;
-    btn.style.background  = isActive ? 'var(--teal)' : '';
-    btn.style.color       = isActive ? '#fff' : '';
-    btn.style.borderColor = isActive ? 'var(--teal)' : '';
+    const isOn = flt===t || (flt==='default' && (t==='none'||t==='active'));
+    btn.style.background  = isOn ? 'var(--teal)' : '';
+    btn.style.color       = isOn ? '#fff' : '';
+    btn.style.borderColor = isOn ? 'var(--teal)' : '';
   });
-  // 전체 버튼
-  const allBtn = document.getElementById('ins-flt-all');
-  if(allBtn) {
-    allBtn.style.background  = flt==='all' ? 'var(--teal)' : '';
-    allBtn.style.color       = flt==='all' ? '#fff' : '';
-    allBtn.style.borderColor = flt==='all' ? 'var(--teal)' : '';
-  }
   renderInsurance();
 }
 
@@ -3896,14 +3888,15 @@ function renderInsurance() {
     return 'active'; // 가입중
   }
 
-  // 필터 적용
-  let list = caregivers.filter(c => c.workStatus !== '종료');
-  if(insFlt === 'none')    list = list.filter(c=>getInsStatus(c)==='none');
-  else if(insFlt === 'active')  list = list.filter(c=>getInsStatus(c)==='active');
-  else if(insFlt === 'expired') list = list.filter(c=>getInsStatus(c)==='expired');
-  else if(insFlt !== 'all') {
-    // default: 가입전 + 가입만 (만료 숨김)
-    list = list.filter(c=>getInsStatus(c)!=='expired');
+  // 전체 간병인 대상 (종료 포함) - 필터로 구분
+  let list = [...caregivers];
+  if(insFlt === 'none')         list = list.filter(c=>c.workStatus!=='종료' && getInsStatus(c)==='none');
+  else if(insFlt === 'active')  list = list.filter(c=>c.workStatus!=='종료' && getInsStatus(c)==='active');
+  else if(insFlt === 'expired') list = list.filter(c=>getInsStatus(c)==='expired' || c.workStatus==='종료');
+  else if(insFlt === 'all')     { /* 전체 */ }
+  else {
+    // default: 현역(종료 아닌) 중 가입전+가입만 표시
+    list = list.filter(c=>c.workStatus!=='종료' && getInsStatus(c)!=='expired');
   }
 
   if(!list.length){
@@ -4945,7 +4938,13 @@ function normalizeTimes() {
     const st=normalizeTime(c.startTime); if(st!==c.startTime){c.startTime=st;changed=true;}
     const et=normalizeTime(c.endTime);   if(et!==c.endTime){c.endTime=et;changed=true;}
   });
-  // 구버전 attendance {date} → 신버전 {inDate, outDate} 자동 변환
+  // workStatus 없는 간병인 기본값 설정
+  caregivers.forEach(c => {
+    if(!c.workStatus) {
+      c.workStatus = '대기중';
+      changed = true;
+    }
+  });
   attendance.forEach(a => {
     if(a.date && !a.inDate) {
       a.inDate  = a.date;
