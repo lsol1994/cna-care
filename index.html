@@ -679,7 +679,15 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
   <!-- 배상보험 섹션 -->
   <div class="card" style="margin-bottom:1rem">
-    <div class="card-hd"><span class="dot"></span>🛡 배상보험 현황</div>
+    <div class="card-hd" style="justify-content:space-between">
+      <div><span class="dot"></span>🛡 배상보험 현황</div>
+      <div style="display:flex;gap:5px">
+        <button id="ins-flt-all"      class="btn btn-sm" onclick="setInsFlt('all')"      style="font-size:11px">전체</button>
+        <button id="ins-flt-none"     class="btn btn-sm btn-teal" onclick="setInsFlt('none')"     style="font-size:11px">가입전</button>
+        <button id="ins-flt-active"   class="btn btn-sm btn-teal" onclick="setInsFlt('active')"   style="font-size:11px">가입</button>
+        <button id="ins-flt-expired"  class="btn btn-sm" onclick="setInsFlt('expired')"  style="font-size:11px">만료</button>
+      </div>
+    </div>
     <div id="insurance-list">
       <div class="empty" style="padding:1rem 0"><p style="font-size:13px">등록된 간병인이 없어요</p></div>
     </div>
@@ -3599,7 +3607,7 @@ function renderAttendance() {
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         ${checkedIn
-          ? `<span class="badge b-green">출근 ${inLabel}${rec.inTime}</span>`
+          ? `<span class="badge b-green" style="${rec.auto?'opacity:.6':''}">출근 ${inLabel}${rec.inTime}${rec.auto?' (자동)':''}</span>`
           : isToday
             ? `<button class="btn btn-sm btn-teal" onclick="checkIn('${c.id}')">출근 체크</button>`
             : `<span style="font-size:12px;color:var(--gray-lt)">출근 기록 없음</span>`}
@@ -3607,7 +3615,7 @@ function renderAttendance() {
           ? isToday
             ? `<button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="checkOut('${c.id}')">퇴근 체크</button>`
             : ''
-          : checkedOut ? `<span class="badge b-gray">퇴근 ${outLabel}${rec.outTime}</span>` : ''}
+          : checkedOut ? `<span class="badge b-gray" style="${rec.auto?'opacity:.6':''}">퇴근 ${outLabel}${rec.outTime}${rec.auto?' (자동)':''}</span>` : ''}
         <button class="btn btn-sm btn-icon" title="기록 수정" onclick="editAttendanceDate('${c.id}','${rec.inDate||selDate}')">
           <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
@@ -3703,6 +3711,72 @@ function saveAttendance(cgId, origDate) {
   toast(`✅ ${newInDate} 출퇴근 기록 저장됐어요 (출근 ${newInTime||'미입력'} / 퇴근 ${newOutTime||'미입력'})${nightNote}`);
 }
 
+// ─── 출퇴근 자동 채우기 ───
+// 시작일 첫 출근 이후 ~ 마감일 퇴근 전까지 매일 00:00/23:59 자동 기록
+function autoFillAttendance(cgId) {
+  const cg = caregivers.find(c=>String(c.id)===String(cgId));
+  if(!cg || !cg.startDate) return 0;
+
+  const today = todayStr();
+  const endDate = cg.endDate || today;
+
+  // 시작일부터 어제까지 순회 (오늘은 실제 체크하는 날이므로 제외)
+  const start = new Date(cg.startDate);
+  const end   = new Date(endDate);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // 마감일보다 어제가 더 이전이면 마감일 전날까지만
+  const fillEnd = end < yesterday ? end : yesterday;
+
+  // 첫 실제 출근 기록 날짜 확인 (실제 체크한 첫날)
+  const realRecs = attendance.filter(a=>a.cgId===String(cgId)&&a.inTime&&a.inTime!=='00:00');
+  const firstRealDate = realRecs.length > 0
+    ? realRecs.sort((a,b)=>(a.inDate||'').localeCompare(b.inDate||''))[0].inDate
+    : null;
+
+  // 첫 실제 출근 이후부터 채우기 (첫날 본인이 직접 체크한 시간 보존)
+  const fillStart = firstRealDate ? new Date(firstRealDate) : new Date(cg.startDate);
+  fillStart.setDate(fillStart.getDate() + 1); // 첫 출근 다음날부터
+
+  let added = 0;
+  const cur = new Date(fillStart);
+
+  while(cur <= fillEnd) {
+    const dateStr = cur.toISOString().split('T')[0];
+    // 이미 기록 있으면 스킵
+    const exists = attendance.find(a=>a.cgId===String(cgId)&&(a.inDate===dateStr||a.date===dateStr));
+    if(!exists) {
+      attendance.push({
+        cgId:    String(cgId),
+        inDate:  dateStr,
+        inTime:  '00:00',
+        outDate: dateStr,
+        outTime: '23:59',
+        auto:    true  // 자동 채우기 표시
+      });
+      added++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  if(added > 0) {
+    save();
+    console.log(`${cg.name} 출퇴근 ${added}일 자동 채움`);
+  }
+  return added;
+}
+
+// 전체 근무중 간병인 자동 채우기
+function autoFillAllAttendance() {
+  let total = 0;
+  caregivers.filter(c=>c.workStatus==='근무중').forEach(c=>{
+    total += autoFillAttendance(String(c.id));
+  });
+  if(total > 0) renderAttendance();
+  return total;
+}
+
 function checkIn(cgId) {
   const selDate = getAttendDate();
   const now = nowTimeStr();
@@ -3710,7 +3784,10 @@ function checkIn(cgId) {
   if(!rec){ rec={cgId, inDate:selDate, inTime:'', outDate:'', outTime:''}; attendance.push(rec); }
   rec.inDate = selDate;
   rec.inTime = now;
-  save(); renderAttendance();
+  delete rec.auto; // 자동 기록 아님 표시
+  save();
+  // 출근 체크 후 이전 날짜 자동 채우기
+  setTimeout(()=>{ autoFillAttendance(cgId); renderAttendance(); }, 100);
   toast(`✅ 출근 체크 완료 (${selDate} ${now})`);
 }
 
@@ -3739,24 +3816,76 @@ function checkOut(cgId) {
 
 
 // ─── 배상보험 ───
+let insFlt = 'default'; // default=가입전+가입, all, none, active, expired
+
+function setInsFlt(flt) {
+  insFlt = flt;
+  // 버튼 스타일
+  ['all','none','active','expired'].forEach(t=>{
+    const btn = document.getElementById('ins-flt-'+t);
+    if(!btn) return;
+    const isActive = (flt==='default' && (t==='none'||t==='active')) || flt===t;
+    btn.style.background  = isActive ? 'var(--teal)' : '';
+    btn.style.color       = isActive ? '#fff' : '';
+    btn.style.borderColor = isActive ? 'var(--teal)' : '';
+  });
+  // 전체 버튼
+  const allBtn = document.getElementById('ins-flt-all');
+  if(allBtn) {
+    allBtn.style.background  = flt==='all' ? 'var(--teal)' : '';
+    allBtn.style.color       = flt==='all' ? '#fff' : '';
+    allBtn.style.borderColor = flt==='all' ? 'var(--teal)' : '';
+  }
+  renderInsurance();
+}
+
 function renderInsurance() {
   const el = document.getElementById('insurance-list');
+  if(!el) return;
   if(!caregivers.length){ el.innerHTML='<div class="empty" style="padding:1rem 0"><p>등록된 간병인이 없어요</p></div>'; return; }
-  const today=new Date(); today.setHours(0,0,0,0);
-  el.innerHTML = caregivers.map(c=>{
+
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // 간병인별 보험 상태 분류
+  function getInsStatus(c) {
+    if(!c.insuranceActive) return 'none'; // 가입전
+    if(c.insuranceTerminated) return 'expired'; // 만료처리 완료
+    if(!c.insuranceExpiry) return 'active'; // 가입 (만료일 미입력)
+    const exp = new Date(c.insuranceExpiry); exp.setHours(0,0,0,0);
+    const diff = Math.ceil((exp-today)/(1000*60*60*24));
+    if(diff < 0) return 'expired'; // 만료됨
+    return 'active'; // 가입중
+  }
+
+  // 필터 적용
+  let list = caregivers.filter(c => c.workStatus !== '종료');
+  if(insFlt === 'none')    list = list.filter(c=>getInsStatus(c)==='none');
+  else if(insFlt === 'active')  list = list.filter(c=>getInsStatus(c)==='active');
+  else if(insFlt === 'expired') list = list.filter(c=>getInsStatus(c)==='expired');
+  else if(insFlt !== 'all') {
+    // default: 가입전 + 가입만 (만료 숨김)
+    list = list.filter(c=>getInsStatus(c)!=='expired');
+  }
+
+  if(!list.length){
+    el.innerHTML='<div class="empty" style="padding:.75rem 0"><p style="font-size:12px">해당하는 간병인이 없어요</p></div>';
+    return;
+  }
+
+  el.innerHTML = list.map(c=>{
     const exp = c.insuranceExpiry ? new Date(c.insuranceExpiry) : null;
     if(exp) exp.setHours(0,0,0,0);
     const diff = exp ? Math.ceil((exp-today)/(1000*60*60*24)) : null;
     const statusColor = !c.insuranceActive ? 'var(--gray-lt)'
       : diff===null ? 'var(--gray)'
-      : c.insuranceTerminated ? 'var(--gray)'   // 만료처리 완료 → 회색
-      : diff < 0  ? 'var(--gray)'
+      : c.insuranceTerminated ? 'var(--gray)'
+      : diff < 0  ? '#dc2626'
       : diff === 0 ? 'var(--red)'
       : diff <= 3 ? 'var(--amber)'
       : 'var(--green)';
-    const statusTxt = !c.insuranceActive ? '미가입'
+    const statusTxt = !c.insuranceActive ? '가입전'
       : diff===null ? '만료일 미입력'
-      : c.insuranceTerminated ? '만료처리 완료'  // 만료처리 완료
+      : c.insuranceTerminated ? '만료처리 완료'
       : diff < 0  ? `만료됨 (${Math.abs(diff)}일 전)`
       : diff === 0 ? '오늘 만료'
       : `D-${diff}`;
@@ -3772,13 +3901,13 @@ function renderInsurance() {
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="badge" style="background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}44">${statusTxt}</span>
         ${c.insuranceActive && diff !== null && diff >= 0 ? `
-        <label class="ck-wrap" style="font-size:12px;gap:5px;cursor:pointer" title="만료 처리하면 리마인드 알람이 중단됩니다">
+        <label class="ck-wrap" style="font-size:12px;gap:5px;cursor:pointer">
           <input type="checkbox" ${c.insuranceTerminated?'checked':''} style="width:15px;height:15px;accent-color:var(--teal)"
             onchange="terminateInsurance('${c.id}',this.checked)">
           <span style="color:var(--gray)">만료처리</span>
         </label>` : ''}
         <button class="btn btn-sm" onclick="editInsurance('${c.id}')">
-          <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;stroke-width:2;fill:none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>보험 수정
+          <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;stroke-width:2;fill:none"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>수정
         </button>
       </div>
     </div>`;
@@ -3846,10 +3975,13 @@ function startRemind() {
   setInterval(checkAutoEnd, 60 * 1000);
   // 날짜 리마인드 1시간마다
   setInterval(checkDateRemind, 60 * 60 * 1000);
+  // 출퇴근 자동 채우기 1시간마다
+  setInterval(autoFillAllAttendance, 60 * 60 * 1000);
   // 시작 시 즉시 체크
   setTimeout(checkInsuranceExpiry, 3000);
   setTimeout(checkAutoEnd, 2000);
-  setTimeout(checkDateRemind, 5000); // 앱 시작 시 날짜 알림
+  setTimeout(checkDateRemind, 5000);
+  setTimeout(autoFillAllAttendance, 7000); // 앱 시작 시 자동 채우기
 }
 
 // ─── 자동 종료 처리 ───
