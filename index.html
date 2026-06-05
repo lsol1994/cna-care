@@ -1291,23 +1291,37 @@ function startFirebaseSync() {
           return;
         }
 
-        // 안전하게 덮어쓰기 - Firebase 데이터가 실제로 있는 경우만
-        if(Array.isArray(d.patients) && d.patients.length > 0) {
-          // 로컬에서 종료 처리한 환자는 보호 (Firebase가 이전 상태로 덮어쓰기 방지)
-          const merged = d.patients.map(dp => {
+        // Firebase는 배열을 객체로 저장할 수 있으므로 변환 필요
+        function fbToArr(val) {
+          if(!val) return [];
+          if(Array.isArray(val)) return val.filter(Boolean);
+          if(typeof val === 'object') return Object.values(val).filter(Boolean);
+          return [];
+        }
+
+        const fbPatients   = fbToArr(d.patients);
+        const fbCaregivers = fbToArr(d.caregivers);
+        const fbRooms      = fbToArr(d.rooms);
+        const fbLogs       = fbToArr(d.logs);
+        const fbAttendance = fbToArr(d.attendance);
+        const fbReportLogs = fbToArr(d.reportLogs);
+        const fbMembers    = fbToArr(d.members);
+
+        // patients - 종료 상태 보호
+        if(fbPatients.length > 0) {
+          patients = fbPatients.map(dp => {
             const local = patients.find(lp=>String(lp.id)===String(dp.id));
             if(local && local.status==='종료' && dp.status!=='종료') return local;
             return dp;
           });
-          patients = merged;
           localStorage.setItem('cnc_patients', JSON.stringify(patients));
         }
-        if(Array.isArray(d.caregivers) && d.caregivers.length > 0) {
-          // 로컬 보험 데이터 보호 - Firebase가 덮어쓰지 않도록
-          const merged = d.caregivers.map(dc => {
+
+        // caregivers - 보험 데이터 보호
+        if(fbCaregivers.length > 0) {
+          caregivers = fbCaregivers.map(dc => {
             const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
             if(!local) return dc;
-            // 로컬에 보험 데이터 있고 Firebase에 없으면 로컬 것 사용
             if(local.insuranceActive && !dc.insuranceActive) {
               dc.insuranceActive     = local.insuranceActive;
               dc.insuranceExpiry     = local.insuranceExpiry;
@@ -1316,20 +1330,19 @@ function startFirebaseSync() {
             }
             return dc;
           });
-          caregivers = merged;
           localStorage.setItem('cnc_cg', JSON.stringify(caregivers));
         }
-        if(Array.isArray(d.attendance)) {
-          // 출퇴근 기록은 더 많은 쪽 유지
-          if(d.attendance.length >= attendance.length) {
-            attendance = d.attendance;
-          }
+
+        // attendance - 더 많은 쪽 유지
+        if(fbAttendance.length > 0) {
+          if(fbAttendance.length >= attendance.length) attendance = fbAttendance;
           localStorage.setItem('cnc_attend', JSON.stringify(attendance));
         }
-        if(Array.isArray(d.rooms) && d.rooms.length > 0) { rooms = d.rooms; localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
-        if(Array.isArray(d.logs))       { logs       = d.logs;       localStorage.setItem('cnc_logs', JSON.stringify(logs)); }
-        if(Array.isArray(d.reportLogs)) { reportLogs = d.reportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
-        if(Array.isArray(d.members))    { members    = d.members;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
+
+        if(fbRooms.length > 0)      { rooms      = fbRooms;      localStorage.setItem('cnc_rooms',   JSON.stringify(rooms)); }
+        if(fbLogs.length > 0)       { logs       = fbLogs;       localStorage.setItem('cnc_logs',    JSON.stringify(logs)); }
+        if(fbReportLogs.length > 0) { reportLogs = fbReportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
+        if(fbMembers.length > 0)    { members    = fbMembers;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
         if(d.cfg && typeof d.cfg === 'object') { cfg = d.cfg; localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
 
         if(!_fbReady) {
