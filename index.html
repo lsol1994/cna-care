@@ -1302,10 +1302,32 @@ function startFirebaseSync() {
           patients = merged;
           localStorage.setItem('cnc_patients', JSON.stringify(patients));
         }
-        if(Array.isArray(d.caregivers) && d.caregivers.length > 0) { caregivers = d.caregivers; localStorage.setItem('cnc_cg', JSON.stringify(caregivers)); }
-        if(Array.isArray(d.rooms)      && d.rooms.length      > 0) { rooms      = d.rooms;      localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
+        if(Array.isArray(d.caregivers) && d.caregivers.length > 0) {
+          // 로컬 보험 데이터 보호 - Firebase가 덮어쓰지 않도록
+          const merged = d.caregivers.map(dc => {
+            const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
+            if(!local) return dc;
+            // 로컬에 보험 데이터 있고 Firebase에 없으면 로컬 것 사용
+            if(local.insuranceActive && !dc.insuranceActive) {
+              dc.insuranceActive     = local.insuranceActive;
+              dc.insuranceExpiry     = local.insuranceExpiry;
+              dc.insuranceMemo       = local.insuranceMemo;
+              dc.insuranceTerminated = local.insuranceTerminated;
+            }
+            return dc;
+          });
+          caregivers = merged;
+          localStorage.setItem('cnc_cg', JSON.stringify(caregivers));
+        }
+        if(Array.isArray(d.attendance)) {
+          // 출퇴근 기록은 더 많은 쪽 유지
+          if(d.attendance.length >= attendance.length) {
+            attendance = d.attendance;
+          }
+          localStorage.setItem('cnc_attend', JSON.stringify(attendance));
+        }
+        if(Array.isArray(d.rooms) && d.rooms.length > 0) { rooms = d.rooms; localStorage.setItem('cnc_rooms', JSON.stringify(rooms)); }
         if(Array.isArray(d.logs))       { logs       = d.logs;       localStorage.setItem('cnc_logs', JSON.stringify(logs)); }
-        if(Array.isArray(d.attendance)) { attendance = d.attendance; localStorage.setItem('cnc_attend', JSON.stringify(attendance)); }
         if(Array.isArray(d.reportLogs)) { reportLogs = d.reportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
         if(Array.isArray(d.members))    { members    = d.members;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
         if(d.cfg && typeof d.cfg === 'object') { cfg = d.cfg; localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
@@ -3711,41 +3733,49 @@ function saveAttendance(cgId, origDate) {
   toast(`✅ ${newInDate} 출퇴근 기록 저장됐어요 (출근 ${newInTime||'미입력'} / 퇴근 ${newOutTime||'미입력'})${nightNote}`);
 }
 
+// ─── 5분마다 자동저장 ───
+function autoSave() {
+  if(!_fbPause) {
+    save();
+    showSyncStatus('자동저장 완료');
+  }
+}
+
 // ─── 출퇴근 자동 채우기 ───
-// 시작일 첫 출근 이후 ~ 마감일 퇴근 전까지 매일 00:00/23:59 자동 기록
 function autoFillAttendance(cgId) {
   const cg = caregivers.find(c=>String(c.id)===String(cgId));
   if(!cg || !cg.startDate) return 0;
 
-  const today = todayStr();
+  const today   = todayStr();
   const endDate = cg.endDate || today;
 
-  // 시작일부터 어제까지 순회 (오늘은 실제 체크하는 날이므로 제외)
-  const start = new Date(cg.startDate);
-  const end   = new Date(endDate);
+  const start     = new Date(cg.startDate);
+  const end       = new Date(endDate);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-
-  // 마감일보다 어제가 더 이전이면 마감일 전날까지만
   const fillEnd = end < yesterday ? end : yesterday;
 
-  // 첫 실제 출근 기록 날짜 확인 (실제 체크한 첫날)
-  const realRecs = attendance.filter(a=>a.cgId===String(cgId)&&a.inTime&&a.inTime!=='00:00');
+  // 첫 실제 출근 기록 날짜 (auto가 아닌 실제 체크)
+  const realRecs = attendance.filter(a=>
+    a.cgId===String(cgId) && a.inTime && a.inTime!=='00:00' && !a.auto
+  );
   const firstRealDate = realRecs.length > 0
     ? realRecs.sort((a,b)=>(a.inDate||'').localeCompare(b.inDate||''))[0].inDate
     : null;
 
-  // 첫 실제 출근 이후부터 채우기 (첫날 본인이 직접 체크한 시간 보존)
   const fillStart = firstRealDate ? new Date(firstRealDate) : new Date(cg.startDate);
-  fillStart.setDate(fillStart.getDate() + 1); // 첫 출근 다음날부터
+  fillStart.setDate(fillStart.getDate() + 1);
 
   let added = 0;
   const cur = new Date(fillStart);
 
   while(cur <= fillEnd) {
     const dateStr = cur.toISOString().split('T')[0];
-    // 이미 기록 있으면 스킵
-    const exists = attendance.find(a=>a.cgId===String(cgId)&&(a.inDate===dateStr||a.date===dateStr));
+    // 신/구버전 모두 체크해서 기존 기록 있으면 절대 덮어쓰지 않음
+    const exists = attendance.find(a=>
+      a.cgId===String(cgId) &&
+      (a.inDate===dateStr || a.date===dateStr)
+    );
     if(!exists) {
       attendance.push({
         cgId:    String(cgId),
@@ -3753,21 +3783,17 @@ function autoFillAttendance(cgId) {
         inTime:  '00:00',
         outDate: dateStr,
         outTime: '23:59',
-        auto:    true  // 자동 채우기 표시
+        auto:    true
       });
       added++;
     }
     cur.setDate(cur.getDate() + 1);
   }
 
-  if(added > 0) {
-    save();
-    console.log(`${cg.name} 출퇴근 ${added}일 자동 채움`);
-  }
+  if(added > 0) save();
   return added;
 }
 
-// 전체 근무중 간병인 자동 채우기
 function autoFillAllAttendance() {
   let total = 0;
   caregivers.filter(c=>c.workStatus==='근무중').forEach(c=>{
@@ -3977,11 +4003,13 @@ function startRemind() {
   setInterval(checkDateRemind, 60 * 60 * 1000);
   // 출퇴근 자동 채우기 1시간마다
   setInterval(autoFillAllAttendance, 60 * 60 * 1000);
+  // 5분마다 자동저장
+  setInterval(autoSave, 5 * 60 * 1000);
   // 시작 시 즉시 체크
   setTimeout(checkInsuranceExpiry, 3000);
   setTimeout(checkAutoEnd, 2000);
   setTimeout(checkDateRemind, 5000);
-  setTimeout(autoFillAllAttendance, 7000); // 앱 시작 시 자동 채우기
+  setTimeout(autoFillAllAttendance, 7000);
 }
 
 // ─── 자동 종료 처리 ───
