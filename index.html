@@ -1235,9 +1235,9 @@ function loadFirebase() {
   });
 }
 
-// ─── Firebase 저장 ───
+// ─── 저장 ───
 function save() {
-  // 로컬 캐시 저장
+  // 로컬 저장
   localStorage.setItem('cnc_patients',  JSON.stringify(patients));
   localStorage.setItem('cnc_cg',        JSON.stringify(caregivers));
   localStorage.setItem('cnc_rooms',     JSON.stringify(rooms));
@@ -1246,13 +1246,30 @@ function save() {
   localStorage.setItem('cnc_rptlogs',   JSON.stringify(reportLogs));
   localStorage.setItem('cnc_cfg',       JSON.stringify(cfg));
   localStorage.setItem('cnc_members',   JSON.stringify(members));
-  // Firebase - update()로 기존 데이터 유지하면서 해당 항목만 업데이트
+
+  // Firebase - set()으로 전체 덮어쓰기 (배열 데이터 정확히 저장)
   if(db) {
     _fbPause = true;
-    db.ref('cnc').update({
-      patients, caregivers, rooms, logs, attendance, reportLogs, cfg, members
-    }).then(()=>{ _fbPause = false; })
-      .catch(e=>{ _fbPause = false; console.warn('Firebase 저장 실패:', e); });
+    const payload = {
+      patients:   patients,
+      caregivers: caregivers,
+      rooms:      rooms,
+      logs:       logs,
+      attendance: attendance,
+      reportLogs: reportLogs,
+      cfg:        cfg,
+      members:    members
+    };
+    db.ref('cnc').set(payload)
+      .then(() => {
+        _fbPause = false;
+        showSyncStatus('저장됨');
+      })
+      .catch(e => {
+        _fbPause = false;
+        console.warn('Firebase 저장 실패:', e);
+        showSyncStatus('저장 실패');
+      });
   }
 }
 
