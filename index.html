@@ -3674,10 +3674,18 @@ function renderAttendance() {
 
   // 선택 날짜에 출퇴근 기록 있는 간병인 + 간병 기간 내 포함 간병인 (종료 포함)
   const allCg = caregivers.filter(c => {
-    if(isToday) return c.workStatus === '근무중'; // 오늘은 근무중만
-    // 과거: 해당 날짜에 기록 있으면 종료자도 표시
-    const hasRecord = attendance.some(a=>a.cgId===String(c.id)&&(a.inDate===selDate||a.outDate===selDate||a.date===selDate));
-    const inPeriod  = c.startDate && c.endDate && selDate >= c.startDate && selDate <= c.endDate;
+    if(!c.startDate) return false;
+    // 오늘: 근무중 + 오늘 종료된 간병인(마감일=오늘) 포함
+    if(isToday) {
+      return c.workStatus === '근무중' ||
+        (c.endDate && c.endDate === selDate); // 오늘 마감인 종료 간병인
+    }
+    // 과거/미래: 기록 있거나 간병 기간 내이면 표시 (종료 포함)
+    const hasRecord = attendance.some(a=>
+      a.cgId===String(c.id)&&(a.inDate===selDate||a.outDate===selDate||a.date===selDate)
+    );
+    const inPeriod = c.startDate && selDate >= c.startDate &&
+      (!c.endDate || selDate <= c.endDate);
     return hasRecord || inPeriod;
   });
 
