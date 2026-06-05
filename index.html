@@ -1236,8 +1236,9 @@ function loadFirebase() {
 }
 
 // ─── 저장 ───
+let _saveTimer = null;
 function save() {
-  // 로컬 저장
+  // 1. 로컬스토리지 즉시 저장 (항상 실행)
   localStorage.setItem('cnc_patients',  JSON.stringify(patients));
   localStorage.setItem('cnc_cg',        JSON.stringify(caregivers));
   localStorage.setItem('cnc_rooms',     JSON.stringify(rooms));
@@ -1247,30 +1248,31 @@ function save() {
   localStorage.setItem('cnc_cfg',       JSON.stringify(cfg));
   localStorage.setItem('cnc_members',   JSON.stringify(members));
 
-  // Firebase - set()으로 전체 덮어쓰기 (배열 데이터 정확히 저장)
-  if(db) {
+  // 2. Firebase 저장 (db 준비된 경우만, 디바운스 300ms)
+  if(!db) return;
+  if(_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
     _fbPause = true;
-    const payload = {
-      patients:   patients,
-      caregivers: caregivers,
-      rooms:      rooms,
-      logs:       logs,
-      attendance: attendance,
-      reportLogs: reportLogs,
-      cfg:        cfg,
-      members:    members
-    };
-    db.ref('cnc').set(payload)
-      .then(() => {
-        _fbPause = false;
-        showSyncStatus('저장됨');
-      })
-      .catch(e => {
-        _fbPause = false;
-        console.warn('Firebase 저장 실패:', e);
-        showSyncStatus('저장 실패');
-      });
-  }
+    // 경로별 개별 set으로 저장 (한 경로 실패해도 다른 경로는 저장)
+    const ref = db.ref('cnc');
+    Promise.all([
+      ref.child('patients').set(patients),
+      ref.child('caregivers').set(caregivers),
+      ref.child('rooms').set(rooms),
+      ref.child('logs').set(logs),
+      ref.child('attendance').set(attendance),
+      ref.child('reportLogs').set(reportLogs),
+      ref.child('cfg').set(cfg),
+      ref.child('members').set(members),
+    ]).then(() => {
+      _fbPause = false;
+      showSyncStatus('저장됨');
+    }).catch(e => {
+      _fbPause = false;
+      console.warn('Firebase 저장 실패:', e);
+      showSyncStatus('저장 실패');
+    });
+  }, 300);
 }
 
 function saveMem() { save(); }
@@ -1296,11 +1298,11 @@ function startFirebaseSync() {
       db = firebase.database();
 
       db.ref('cnc').on('value', snap => {
-        if(_fbPause) return;
+        if(_fbPause) return; // 저장 중이면 스킵
         const d = snap.val();
 
         // Firebase 비어있으면 로컬 데이터 업로드
-        if(!d) {
+        if(!d || Object.keys(d).length === 0) {
           if(patients.length || caregivers.length) save();
           _fbReady = true;
           showSyncStatus('연결됨');
@@ -2493,7 +2495,7 @@ function calcEndDateVal(p) {
   if(!p || !p.startDate) return '';
   const days = parseDurationDays(p.duration);
   if(!days) return '';
-  const d = new Date(p.startDate);
+  const d = parseLocalDate(p.startDate);
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
@@ -3593,13 +3595,13 @@ function ptDdayBadge(p) {
   const today = new Date(); today.setHours(0,0,0,0);
   const badges = [];
   if(p.startDate && p.status !== '종료') {
-    const sd = new Date(p.startDate); sd.setHours(0,0,0,0);
+    const sd = parseLocalDate(p.startDate); sd.setHours(0,0,0,0);
     const diff = Math.round((sd - today) / 86400000);
     if(diff === 0)                    badges.push(`<span class="badge b-teal" style="font-size:10px">▶ D-day 시작!</span>`);
     else if(diff > 0 && diff <= 3)   badges.push(`<span class="badge b-blue" style="font-size:10px">▶ D-${diff} 시작</span>`);
   }
   if(p.endDate && p.status !== '종료') {
-    const ed = new Date(p.endDate); ed.setHours(0,0,0,0);
+    const ed = parseLocalDate(p.endDate); ed.setHours(0,0,0,0);
     const diff = Math.round((ed - today) / 86400000);
     if(diff === 0)                    badges.push(`<span class="badge" style="font-size:10px;background:#FEE2E2;color:#dc2626;border:none">■ D-day 마감!</span>`);
     else if(diff > 0 && diff <= 3)   badges.push(`<span class="badge b-amber" style="font-size:10px">■ D-${diff} 마감</span>`);
@@ -3614,12 +3616,12 @@ function checkDateRemind() {
   const alerts = [];
   patients.filter(p=>p.status!=='종료').forEach(p=>{
     if(p.startDate) {
-      const diff = Math.round((new Date(p.startDate).setHours(0,0,0,0) - today) / 86400000);
+      const diff = Math.round((parseLocalDate(p.startDate).setHours(0,0,0,0) - today) / 86400000);
       if(diff === 0) alerts.push(`▶ <b>${p.name}</b> 오늘 간병 시작! (${p.hospital})`);
       else if(diff === 1) alerts.push(`▶ <b>${p.name}</b> 내일 간병 시작 (${p.startDate})`);
     }
     if(p.endDate) {
-      const diff = Math.round((new Date(p.endDate).setHours(0,0,0,0) - today) / 86400000);
+      const diff = Math.round((parseLocalDate(p.endDate).setHours(0,0,0,0) - today) / 86400000);
       if(diff === 0) alerts.push(`■ <b>${p.name}</b> 오늘 간병 마감! (${p.hospital})`);
       else if(diff === 1) alerts.push(`■ <b>${p.name}</b> 내일 간병 마감 (${p.endDate})`);
     }
@@ -3633,6 +3635,16 @@ function checkDateRemind() {
     if(cfg.sound !== false) playBeep();
     setTimeout(()=>{ popup.style.display='none'; }, 15000);
   }
+}
+
+// ─── 날짜 유틸 ───
+// 'YYYY-MM-DD' 문자열을 로컬 시간 기준으로 파싱 (UTC 파싱 방지)
+// new Date('2026-06-06')은 UTC 기준이라 한국에서 6/5로 인식되는 문제 해결
+function parseLocalDate(dateStr) {
+  if(!dateStr) return null;
+  const parts = String(dateStr).split('-').map(Number);
+  if(parts.length < 3 || parts.some(isNaN)) return null;
+  return new Date(parts[0], parts[1]-1, parts[2], 0, 0, 0, 0);
 }
 
 function todayStr() { return new Date().toISOString().split('T')[0]; }
@@ -3816,10 +3828,9 @@ function saveAttendance(cgId, origDate) {
 
 // ─── 5분마다 자동저장 ───
 function autoSave() {
-  if(!_fbPause) {
-    save();
-    showSyncStatus('자동저장 완료');
-  }
+  if(_fbPause) return; // 저장 중이면 스킵
+  save();
+  showSyncStatus('자동저장 완료');
 }
 
 // ─── 출퇴근 자동 채우기 ───
@@ -3835,9 +3846,9 @@ function autoFillAttendanceUntilEnd(cgId, endDate) {
     ? realRecs.sort((a,b)=>(a.inDate||'').localeCompare(b.inDate||''))[0].inDate
     : null;
 
-  const fillStart = firstRealDate ? new Date(firstRealDate) : new Date(cg.startDate);
+  const fillStart = firstRealDate ? parseLocalDate(firstRealDate) : parseLocalDate(cg.startDate);
   fillStart.setDate(fillStart.getDate() + 1);
-  const fillEnd = new Date(endDate);
+  const fillEnd = parseLocalDate(endDate);
 
   let added = 0;
   const cur = new Date(fillStart);
@@ -3872,9 +3883,9 @@ function autoFillAttendance(cgId) {
 
   const today   = todayStr();
   const endDate = cg.endDate || today;
-  const fillEnd = new Date(endDate);
+  const fillEnd = parseLocalDate(endDate);
   let added = 0;
-  const cur = new Date(cg.startDate);
+  const cur = parseLocalDate(cg.startDate);
 
   while(cur <= fillEnd) {
     const dateStr = cur.toISOString().split('T')[0];
@@ -4141,9 +4152,11 @@ function checkAutoEnd() {
   function calcEndDt(endDate, endTime) {
     if(!endDate) return null;
     const [eh, em] = (endTime||'23:59').split(':').map(Number);
-    const dt = new Date(endDate);
+    // 'YYYY-MM-DD' 형식을 로컬 시간 기준으로 파싱 (UTC 파싱 방지)
+    const [y, mo, d] = endDate.split('-').map(Number);
+    if(!y || !mo || !d) return null;
+    const dt = new Date(y, mo-1, d, eh, em, 0, 0);
     if(isNaN(dt.getTime())) return null;
-    dt.setHours(eh, em, 0, 0);
     return dt;
   }
 
@@ -5042,7 +5055,7 @@ function normalizeTimes() {
       changed = true;
     }
     if(p.recruitStartDate) {
-      const rDate = new Date(p.recruitStartDate);
+      const rDate = parseLocalDate(p.recruitStartDate);
       const sDate = new Date(p.startDate||'9999-12-31');
       if(p.recruitStartDate <= p.startDate) {
         delete p.recruitStartDate; changed = true;
