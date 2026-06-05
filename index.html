@@ -3844,41 +3844,59 @@ function autoFillAttendance(cgId) {
 
   const today   = todayStr();
   const endDate = cg.endDate || today;
-
-  let added = 0;
-
-  // 시작일 다음날부터 마감일까지 순회
-  const cur = parseLocalDate(cg.startDate);
-  if(!cur) return 0;
-  cur.setDate(cur.getDate() + 1); // 시작일 다음날부터
-
   const end = parseLocalDate(endDate);
   if(!end) return 0;
 
+  let added = 0;
+  const cur = parseLocalDate(cg.startDate);
+  if(!cur) return 0;
+
   while(cur <= end) {
     const dateStr = cur.toISOString().split('T')[0];
+    const isFirst = dateStr === cg.startDate;
 
-    // 기존 기록 있으면 절대 덮어쓰지 않음 (신/구버전 모두 체크)
+    // 기존 기록 확인 (신/구버전 모두)
     const existing = attendance.find(a=>
       a.cgId===String(cgId) && (a.inDate===dateStr || a.date===dateStr)
     );
 
     if(!existing) {
-      // 없으면 00:00~23:59 자동 생성
-      attendance.push({
-        cgId:    String(cgId),
-        inDate:  dateStr,
-        inTime:  '00:00',
-        outDate: dateStr,
-        outTime: '23:59',   // 간병일지는 항상 23:59 고정
-        auto:    true
-      });
-      added++;
-    } else if(existing.inTime && !existing.outTime) {
-      // 출근만 있고 퇴근 없으면 23:59 자동 채움
-      existing.outDate = dateStr;
-      existing.outTime = '23:59';
-      added++;
+      if(isFirst) {
+        // 시작일: startTime으로 출근, 퇴근은 23:59
+        const inTime = cg.startTime || '';
+        attendance.push({
+          cgId:    String(cgId),
+          inDate:  dateStr,
+          inTime:  inTime,   // 서비스 시작시간 (비어있으면 직접 체크)
+          outDate: dateStr,
+          outTime: '23:59',
+          auto:    true
+        });
+        added++;
+      } else {
+        // 나머지 날: 출근 00:00 / 퇴근 23:59
+        attendance.push({
+          cgId:    String(cgId),
+          inDate:  dateStr,
+          inTime:  '00:00',
+          outDate: dateStr,
+          outTime: '23:59',
+          auto:    true
+        });
+        added++;
+      }
+    } else {
+      // 출근 있고 퇴근 없으면 23:59 자동 채움
+      if(existing.inTime && !existing.outTime) {
+        existing.outDate = dateStr;
+        existing.outTime = '23:59';
+        added++;
+      }
+      // 시작일인데 startTime 없으면 채워줌
+      if(isFirst && !existing.inTime && cg.startTime) {
+        existing.inTime = cg.startTime;
+        added++;
+      }
     }
 
     cur.setDate(cur.getDate() + 1);
@@ -3992,15 +4010,15 @@ function renderInsurance() {
     if(exp) exp.setHours(0,0,0,0);
     const diff = exp ? Math.ceil((exp-today)/(1000*60*60*24)) : null;
     const statusColor = !c.insuranceActive ? 'var(--gray-lt)'
-      : diff===null ? 'var(--gray)'
       : c.insuranceTerminated ? 'var(--gray)'
+      : diff===null ? 'var(--gray)'
       : diff < 0  ? '#dc2626'
       : diff === 0 ? 'var(--red)'
       : diff <= 3 ? 'var(--amber)'
       : 'var(--green)';
     const statusTxt = !c.insuranceActive ? '가입전'
+      : c.insuranceTerminated ? `만료처리 완료${c.insuranceExpiry?' ('+c.insuranceExpiry+')':''}`
       : diff===null ? '만료일 미입력'
-      : c.insuranceTerminated ? '만료처리 완료'
       : diff < 0  ? `만료됨 (${Math.abs(diff)}일 전)`
       : diff === 0 ? '오늘 만료'
       : `D-${diff}`;
