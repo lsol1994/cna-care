@@ -1260,10 +1260,12 @@ function save() {
     }).then(() => {
       setTimeout(() => { _fbPause = false; }, 1500);
       showSyncStatus('저장됨');
+      // 우하단 싱크 표시만 (토스트는 매번 뜨면 거슬리므로 생략)
     }).catch(e => {
       _fbPause = false;
       console.warn('Firebase 저장 실패:', e);
-      showSyncStatus('저장 실패');
+      showSyncStatus('저장 실패 ⚠️');
+      toast('⚠️ Firebase 저장 실패! 네트워크 확인해주세요', true);
     });
   }, 300);
 }
@@ -1436,14 +1438,14 @@ function showSyncStatus(msg, isErr) {
   if(!el) {
     el = document.createElement('div');
     el.id = 'fb-status';
-    el.style.cssText = 'position:fixed;bottom:70px;right:16px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;z-index:999;transition:opacity .5s;pointer-events:none';
+    el.style.cssText = 'position:fixed;top:12px;right:16px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;z-index:9999;transition:opacity .5s;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.15)';
     document.body.appendChild(el);
   }
   el.textContent = '☁️ ' + msg;
-  el.style.background = isErr ? 'var(--red)' : 'var(--teal)';
+  el.style.background = isErr ? 'var(--red)' : msg.includes('저장됨') ? '#0B7A6E' : msg.includes('실패') ? 'var(--red)' : 'rgba(11,122,110,.85)';
   el.style.color = '#fff';
   el.style.opacity = '1';
-  setTimeout(()=>{ el.style.opacity='0'; }, 2500);
+  setTimeout(()=>{ el.style.opacity='0'; }, 3000);
 }
 
 // ─── TOAST ───
