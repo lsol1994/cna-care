@@ -1258,7 +1258,7 @@ function save() {
       patients, caregivers, rooms, logs,
       attendance, reportLogs, cfg, members
     }).then(() => {
-      setTimeout(() => { _fbPause = false; }, 500);
+      setTimeout(() => { _fbPause = false; }, 1500);
       showSyncStatus('저장됨');
     }).catch(e => {
       _fbPause = false;
@@ -2619,8 +2619,9 @@ function saveCg() {
   sendSheets({type:'journal', caregiverName:cg.name, phone:cg.phone||'', hospital:cg.hospital,
     startDate:cg.startDate, startTime:cg.startTime, endDate:cg.endDate, endTime:cg.endTime});
   if(pt) {
-    if(cg.endDate) pt.endDate = cg.endDate;
-    if(cg.endTime) pt.endTime = cg.endTime;
+    // 환자에 endDate 없을 때만 간병인 것으로 채움 (환자 정보 우선)
+    if(cg.endDate && !pt.endDate) pt.endDate = cg.endDate;
+    if(cg.endTime && !pt.endTime) pt.endTime = cg.endTime;
     sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate,
       caregiverName:cg.name, status:'매칭완료'});
   }
@@ -4932,11 +4933,14 @@ function autoMatch() {
   });
 
   // ④ 매칭된 쌍끼리 마감일/시간 동기화 (종료 환자 제외)
+  // 단, 환자가 직접 endDate를 입력한 경우 간병인으로 덮어쓰지 않음
+  // 간병인 endDate → 환자 endDate 방향만 (환자 정보가 우선)
   caregivers.forEach(c => {
     if(!c.patientId || !c.endDate) return;
     const pt = patients.find(p=>String(p.id)===String(c.patientId));
-    if(!pt || pt.status === '종료') return; // 종료 환자 제외
-    if(pt.endDate !== c.endDate || pt.endTime !== c.endTime) {
+    if(!pt || pt.status === '종료') return;
+    // 환자에 endDate 없을 때만 간병인 것으로 채움
+    if(!pt.endDate) {
       pt.endDate = c.endDate;
       pt.endTime = c.endTime || '';
       count++;
