@@ -2107,19 +2107,25 @@ function confirmEndPatient(id) {
   p.endTime   = endTime;
   if(endReason) p.endReason = endReason;
 
-  // 연결된 간병인도 종료
+  // 연결된 간병인도 종료 (실제 종료일로 업데이트)
   const cg = caregivers.find(c=>String(c.patientId)===String(id));
   if(cg && cg.workStatus !== '종료') {
     cg.workStatus = '종료';
-    if(!cg.endDate) cg.endDate = endDate;
-    if(!cg.endTime) cg.endTime = endTime;
+    cg.endDate = endDate; // 실제 종료일로 덮어씀
+    cg.endTime = endTime || cg.endTime || '';
+  } else if(cg) {
+    // 이미 종료됐어도 실제 종료일이 다르면 업데이트
+    if(endDate && cg.endDate !== endDate) {
+      cg.endDate = endDate;
+      cg.endTime = endTime || cg.endTime || '';
+    }
   }
 
-  // 종료보고 자동 생성
+  // 종료보고 자동 생성 (실제 종료일 기준)
   const now2 = new Date();
   const timeStr = now2.toLocaleDateString('ko-KR') + ' ' +
     now2.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', hour12:false});
-  const endMsg = buildEndReport(p);
+  const endMsg = buildEndReport(p, endDate, endTime); // 실제 종료일 전달
   reportLogs.unshift({
     patientId:   String(p.id),
     patientName: p.name,
@@ -2129,18 +2135,12 @@ function confirmEndPatient(id) {
     auto:        true
   });
 
-  // Firebase 덮어쓰기 방지 후 저장
-  _fbPause = true;
+  // 저장 + UI 갱신
   save();
-
-  // 모달 닫기 + UI 갱신
   document.getElementById('pt-overlay').classList.remove('open');
   renderPatients();
   renderDashboard();
   updateSidebar();
-
-  // 1초 후 pause 해제 (Firebase 저장 완료 대기)
-  setTimeout(() => { _fbPause = false; }, 1000);
 
   toast(`✅ ${p.name} 종료 처리됐어요 (${endDate}${endTime ? ' ' + endTime : ''})`);
 }
@@ -2883,9 +2883,9 @@ function confirmEarlyTerminate(cgId) {
   const reason   = document.getElementById('et-reason').value.trim();
   const termType = document.querySelector('input[name="et-type"]:checked')?.value || 'recruit';
 
-  // 간병인 상태 업데이트
+  // 간병인 종료 처리 - 실제 종료일로 업데이트
   cg.workStatus = '종료';
-  cg.endDate    = endDate;
+  cg.endDate    = endDate; // 실제 종료일로 덮어씀
   cg.endTime    = endTime;
   if(reason) cg.feedback = (cg.feedback ? cg.feedback + ' / ' : '') + '[중도종료] ' + reason;
 
@@ -2899,7 +2899,7 @@ function confirmEarlyTerminate(cgId) {
         // ── 완전 종료: 환자도 종료 처리 ──
         pt.status     = '종료';
         pt.recruited  = true;
-        pt.endDate    = endDate;
+        pt.endDate    = endDate; // 실제 종료일
         pt.endTime    = endTime;
         pt.caregiverName = '';
         if(reason) pt.endReason = reason;
@@ -3296,11 +3296,16 @@ function buildMatchReport(p) {
 }
 
 // ── 종료 보고 메시지 생성 ──
-function buildEndReport(p) {
+function buildEndReport(p, actualEndDate, actualEndTime) {
   const cg = findCgForPatient(p);
-  const cgName   = cg ? cg.name : (p.caregiverName||'________');
-  const endDate  = cg && cg.endDate ? cg.endDate : '';
-  const endTime  = cg && cg.endTime ? cg.endTime : '';
+  const cgName = cg ? cg.name : (p.caregiverName||'________');
+
+  // 종료일시 우선순위:
+  // 1. 실제 종료 처리 시 입력한 날짜 (confirmEndPatient에서 전달)
+  // 2. 환자 endDate (p.endDate)
+  // 3. 간병인 endDate (cg.endDate)
+  const endDate = actualEndDate || p.endDate || (cg ? cg.endDate : '') || '';
+  const endTime = actualEndTime || p.endTime || (cg ? cg.endTime : '') || '';
   const endDateStr = endDate ? formatReportDate(endDate, endTime) : '________';
 
   return `-환자명 : ${p.name||''}(${p.hospital||''})
@@ -4212,12 +4217,11 @@ function checkAutoEnd() {
       // 종료보고 메시지 생성
       const msgs = newItems.map(({pt, cg}) => {
         const cgName  = cg ? cg.name : (pt ? pt.caregiverName : '');
-        const hospital= pt ? pt.hospital : (cg ? cg.hospital : '');
-        const ptName  = pt ? pt.name : '';
-        const endDate = pt ? (pt.endDate||'') : (cg ? cg.endDate : '');
-        const endTime = pt ? (pt.endTime||'') : (cg ? cg.endTime : '');
-        const endStr  = endDate ? formatReportDate(endDate, endTime) : '________';
-        return `-환자명 : ${ptName}(${hospital||''})\n-간병인명 : ${cgName}\n-종료일시 : ${endStr} 종료(퇴원)`;
+        const endDate = pt ? (pt.endDate||cg.endDate||'') : (cg ? cg.endDate : '');
+        const endTime = pt ? (pt.endTime||cg.endTime||'') : (cg ? cg.endTime : '');
+        // buildEndReport에 실제 종료일 전달
+        return pt ? buildEndReport(pt, endDate, endTime)
+          : `-환자명 : (${cg.hospital||''})\n-간병인명 : ${cgName}\n-종료일시 : ${endDate?formatReportDate(endDate,endTime):'________'} 종료(퇴원)`;
       }).join('\n\n');
 
       // 종료보고 로그 자동 저장 (한 번만)
