@@ -1237,6 +1237,8 @@ function loadFirebase() {
 
 // ─── 저장 ───
 let _saveTimer = null;
+let _lastSaveTime = 0; // 마지막 저장 시각 (타임스탬프)
+
 function save() {
   // 1. 로컬스토리지 즉시 저장
   localStorage.setItem('cnc_patients',  JSON.stringify(patients));
@@ -1253,14 +1255,15 @@ function save() {
   if(_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     _fbPause = true;
+    _lastSaveTime = Date.now();
     const ref = db.ref('cnc');
     ref.set({
       patients, caregivers, rooms, logs,
       attendance, reportLogs, cfg, members
     }).then(() => {
-      setTimeout(() => { _fbPause = false; }, 1500);
+      // 저장 완료 후 리스너 재활성화 (저장 완료 확인 후)
+      _fbPause = false;
       showSyncStatus('저장됨');
-      // 우하단 싱크 표시만 (토스트는 매번 뜨면 거슬리므로 생략)
     }).catch(e => {
       _fbPause = false;
       console.warn('Firebase 저장 실패:', e);
@@ -1294,6 +1297,22 @@ function startFirebaseSync() {
 
       db.ref('cnc').on('value', snap => {
         if(_fbPause) return; // 저장 중이면 스킵
+
+        // 저장 완료 후 2초 내 수신 = 내가 방금 저장한 데이터 → 덮어쓰기 방지
+        const isMyOwnSave = (Date.now() - _lastSaveTime) < 2000;
+        if(isMyOwnSave) {
+          // UI만 갱신 (데이터 덮어쓰기 없음)
+          if(_fbReady) {
+            try {
+              const ap = document.querySelector('.page.act')?.id;
+              if(ap==='page-patients')  renderPatients();
+              if(ap==='page-caregiver') renderCaregivers();
+              updateSidebar(); renderDashboard();
+            } catch(e) {}
+          }
+          return;
+        }
+
         const d = snap.val();
 
         // Firebase 비어있으면 로컬 데이터 업로드
@@ -1721,7 +1740,29 @@ function ptRowHTML(p) {
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:.5rem;flex-wrap:wrap;font-size:12px">
       <span style="color:var(--teal);font-weight:700">▶ ${p.startDate||'—'} ${p.startTime||''}</span>
       <span style="color:var(--gray)">→</span>
-      <span style="color:${p.endDate?'#dc2626':'var(--gray-lt)'};font-weight:700">■ ${p.endDate||'미정'} ${p.endDate&&p.endTime?p.endTime:''}</span>
+      ${(()=>{
+        // 실제 마감일 우선, 없으면 startDate+duration 예상 계산
+        let dispDate = p.endDate;
+        let dispTime = p.endDate ? (p.endTime||'') : '';
+        let isEst = false;
+        if(!dispDate && p.startDate && p.duration) {
+          const days = parseDurationDays(p.duration);
+          if(days) {
+            const d = parseLocalDate(p.startDate);
+            if(d) {
+              d.setDate(d.getDate() + days);
+              dispDate = d.toISOString().split('T')[0];
+              dispTime = p.startTime || '';
+              isEst = true;
+            }
+          }
+        }
+        const color = p.endDate ? '#dc2626' : isEst ? 'var(--amber)' : 'var(--gray-lt)';
+        const label = dispDate
+          ? `■ ${dispDate} ${dispTime}${isEst?' <span style="font-size:10px;font-weight:400">(예상)</span>':''}`
+          : '■ 미정';
+        return `<span style="color:${color};font-weight:700">${label}</span>`;
+      })()}
       <span style="color:var(--gray);font-size:11px">(${p.duration||'기간미정'})</span>
     </div>
     <div class="pt-foot">
@@ -1760,6 +1801,17 @@ function renderPatients() {
       (p.caregiverName||'').toLowerCase().includes(q)
     );
   }
+  // 정렬: 종료 환자 맨 뒤, 나머지는 서비스시작일 순
+  list.sort((a, b) => {
+    const aEnded = a.status === '종료' ? 1 : 0;
+    const bEnded = b.status === '종료' ? 1 : 0;
+    if(aEnded !== bEnded) return aEnded - bEnded;
+    const da = a.startDate || '9999-99-99';
+    const db = b.startDate || '9999-99-99';
+    if(da !== db) return da.localeCompare(db);
+    return (a.startTime||'').localeCompare(b.startTime||'');
+  });
+
   const el = document.getElementById('pt-list');
   if(!list.length) {
     el.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><p>${q ? `"${q}" 검색 결과가 없어요` : '환자가 없어요'}</p></div>`;
@@ -2696,6 +2748,17 @@ function renderCaregivers() {
       (c.region||'').toLowerCase().includes(q)
     );
   }
+
+  // 정렬: 종료 간병인 맨 뒤, 나머지는 서비스시작일 순
+  list.sort((a, b) => {
+    const aEnded = a.workStatus === '종료' ? 1 : 0;
+    const bEnded = b.workStatus === '종료' ? 1 : 0;
+    if(aEnded !== bEnded) return aEnded - bEnded;
+    const da = a.startDate || '9999-99-99';
+    const db = b.startDate || '9999-99-99';
+    if(da !== db) return da.localeCompare(db);
+    return (a.startTime||'').localeCompare(b.startTime||'');
+  });
 
   const el = document.getElementById('cg-list');
   if(!list.length) {
@@ -3682,7 +3745,7 @@ function renderAttendance() {
   if(selDateEl && !selDateEl.value) selDateEl.value = todayStr();
 
   const isToday = selDate === todayStr();
-  const d = new Date(selDate);
+  const d = parseLocalDate(selDate);
   const dateLabel = d.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'});
   const lbl = document.getElementById('today-date-lbl');
   if(lbl) lbl.textContent = dateLabel + (isToday?' (오늘)':'');
@@ -3946,7 +4009,7 @@ function checkOut(cgId) {
   let rec = attendance.find(a=>a.cgId===cgId&&a.inDate===selDate&&!a.outTime);
   if(!rec) {
     // 전날 출근 기록 찾기 (야간근무)
-    const prev = new Date(selDate); prev.setDate(prev.getDate()-1);
+    const prev = parseLocalDate(selDate); if(prev) prev.setDate(prev.getDate()-1);
     const prevStr = prev.toISOString().split('T')[0];
     rec = attendance.find(a=>a.cgId===cgId&&a.inDate===prevStr&&!a.outTime);
   }
@@ -5047,7 +5110,7 @@ function normalizeTimes() {
     }
     if(p.recruitStartDate) {
       const rDate = parseLocalDate(p.recruitStartDate);
-      const sDate = new Date(p.startDate||'9999-12-31');
+      const sDate = parseLocalDate(p.startDate||'9999-12-31');
       if(p.recruitStartDate <= p.startDate) {
         delete p.recruitStartDate; changed = true;
       }
