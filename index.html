@@ -1235,9 +1235,23 @@ function loadFirebase() {
   });
 }
 
+// undefined 값을 null 또는 제거하여 Firebase 저장 가능하게 변환
+function cleanForFirebase(obj) {
+  if(Array.isArray(obj)) return obj.map(cleanForFirebase);
+  if(obj !== null && typeof obj === 'object') {
+    const cleaned = {};
+    for(const key of Object.keys(obj)) {
+      if(obj[key] === undefined) continue; // undefined 필드 제거
+      cleaned[key] = cleanForFirebase(obj[key]);
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 // ─── 저장 ───
 let _saveTimer = null;
-let _lastSaveTime = 0; // 마지막 저장 시각 (타임스탬프)
+let _lastSaveTime = 0;
 
 function save() {
   // 1. 로컬스토리지 즉시 저장
@@ -1256,20 +1270,21 @@ function save() {
   _saveTimer = setTimeout(() => {
     _fbPause = true;
     _lastSaveTime = Date.now();
-    const ref = db.ref('cnc');
-    ref.set({
+    // undefined 제거 후 저장
+    const payload = cleanForFirebase({
       patients, caregivers, rooms, logs,
       attendance, reportLogs, cfg, members
-    }).then(() => {
-      // 저장 완료 후 리스너 재활성화 (저장 완료 확인 후)
-      _fbPause = false;
-      showSyncStatus('저장됨');
-    }).catch(e => {
-      _fbPause = false;
-      console.warn('Firebase 저장 실패:', e);
-      showSyncStatus('저장 실패 ⚠️');
-      toast('⚠️ Firebase 저장 실패! 네트워크 확인해주세요', true);
     });
+    db.ref('cnc').set(payload)
+      .then(() => {
+        _fbPause = false;
+        showSyncStatus('저장됨');
+      }).catch(e => {
+        _fbPause = false;
+        console.warn('Firebase 저장 실패:', e);
+        showSyncStatus('저장 실패 ⚠️');
+        toast('⚠️ Firebase 저장 실패! 네트워크 확인해주세요', true);
+      });
   }, 300);
 }
 
