@@ -1788,7 +1788,7 @@ function ptRowHTML(p) {
             const d = parseLocalDate(p.startDate);
             if(d) {
               d.setDate(d.getDate() + days);
-              dispDate = d.toISOString().split('T')[0];
+              dispDate = toLocalDateStr(d);
               dispTime = p.startTime || '';
               isEst = true;
             }
@@ -2143,7 +2143,7 @@ function changeStatus(id, status) {
 function openEndPatientModal(id) {
   const p = patients.find(x=>String(x.id)===String(id));
   if(!p) return;
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalDateStr(new Date());
   const now   = new Date().toTimeString().slice(0,5);
 
   document.getElementById('pt-modal-title').textContent = `${p.name} — 종료 처리`;
@@ -2493,7 +2493,7 @@ function openCaregiverModal(patientId) {
 }
 
 function renderCgForm(cg, p) {
-  const today=new Date().toISOString().split('T')[0];
+  const today=toLocalDateStr(new Date());
   const v=n=>cg?cg[n]||'':'';
   document.getElementById('cg-form-body').innerHTML=`
     <div class="g2">
@@ -2583,7 +2583,7 @@ function calcEndDateVal(p) {
   if(!days) return '';
   const d = parseLocalDate(p.startDate);
   d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return toLocalDateStr(d);
 }
 
 // 시작일 변경 시 마감일 재계산 (환자 duration 기반)
@@ -2598,7 +2598,7 @@ function calcEndDate() {
   if(!d) return;
   d.setDate(d.getDate() + days);
   const endEl = document.getElementById('cg-endDate');
-  if(endEl) endEl.value = d.toISOString().split('T')[0];
+  if(endEl) endEl.value = toLocalDateStr(d);
 }
 
 // 주민번호 성별코드 → 출생연도 계산
@@ -2891,7 +2891,7 @@ function openEarlyTerminate(cgId) {
   const cg = caregivers.find(c=>String(c.id)===String(cgId));
   if(!cg) return;
   const pt = cg.patientId ? patients.find(p=>String(p.id)===String(cg.patientId)) : null;
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalDateStr(new Date());
 
   document.getElementById('cg-modal-title').textContent = '중도 종료 처리';
   document.getElementById('cg-form-body').innerHTML = `
@@ -3742,7 +3742,6 @@ function checkDateRemind() {
 
 // ─── 날짜 유틸 ───
 // 'YYYY-MM-DD' 문자열을 로컬 시간 기준으로 파싱 (UTC 파싱 방지)
-// new Date('2026-06-06')은 UTC 기준이라 한국에서 6/5로 인식되는 문제 해결
 function parseLocalDate(dateStr) {
   if(!dateStr) return null;
   const parts = String(dateStr).split('-').map(Number);
@@ -3750,7 +3749,16 @@ function parseLocalDate(dateStr) {
   return new Date(parts[0], parts[1]-1, parts[2], 0, 0, 0, 0);
 }
 
-function todayStr() { return new Date().toISOString().split('T')[0]; }
+// Date 객체를 로컬 기준 YYYY-MM-DD 문자열로 변환 (toISOString UTC 변환 방지)
+function toLocalDateStr(d) {
+  if(!d || isNaN(d.getTime())) return '';
+  const y  = d.getFullYear();
+  const mo = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${mo}-${dd}`;
+}
+
+function todayStr() { return toLocalDateStr(new Date()); }
 function nowTimeStr() {
   const n=new Date();
   return n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0');
@@ -3766,7 +3774,7 @@ function shiftAttendDate(delta) {
   if(!el) return;
   const cur = parseLocalDate(el.value || todayStr());
   cur.setDate(cur.getDate() + delta);
-  el.value = cur.toISOString().split('T')[0];
+  el.value = toLocalDateStr(cur);
   renderAttendance();
 }
 
@@ -3960,7 +3968,7 @@ function autoFillAttendance(cgId) {
   if(!cur) return 0;
 
   while(cur <= end) {
-    const dateStr = cur.toISOString().split('T')[0];
+    const dateStr = toLocalDateStr(cur);
     const isFirst = dateStr === cg.startDate;
 
     // 기존 기록 확인 (신/구버전 모두)
@@ -4047,7 +4055,7 @@ function checkOut(cgId) {
   if(!rec) {
     // 전날 출근 기록 찾기 (야간근무)
     const prev = parseLocalDate(selDate); if(prev) prev.setDate(prev.getDate()-1);
-    const prevStr = prev.toISOString().split('T')[0];
+    const prevStr = toLocalDateStr(prev);
     rec = attendance.find(a=>a.cgId===cgId&&a.inDate===prevStr&&!a.outTime);
   }
   if(!rec||!rec.inTime){ toast('출근 체크 먼저 해주세요',true); return; }
@@ -4288,7 +4296,7 @@ function checkAutoEnd() {
         const d = parseLocalDate(pt.startDate);
         if(!d) return;
         d.setDate(d.getDate() + days);
-        endDate = d.toISOString().split('T')[0];
+        endDate = toLocalDateStr(d);
         // 24시간 기준: 마감시간 = 시작시간 (startTime)
         endTime = pt.startTime || (cg ? cg.endTime : '23:59') || '23:59';
       }
@@ -5211,7 +5219,7 @@ setTimeout(function() {
 }, 100);
 
 // 오늘 날짜 기본값
-const today=new Date().toISOString().split('T')[0];
+const today=toLocalDateStr(new Date());
 const startDateEl=document.getElementById('p-start-date');
 if(startDateEl&&!startDateEl.value) startDateEl.value=today;
 </script>
