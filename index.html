@@ -1251,7 +1251,6 @@ function cleanForFirebase(obj) {
 
 // ─── 저장 ───
 let _saveTimer = null;
-let _lastSaveTime = 0;
 
 function save() {
   // 1. 로컬스토리지 즉시 저장
@@ -1269,8 +1268,7 @@ function save() {
   if(_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     _fbPause = true;
-    _lastSaveTime = Date.now();
-    // undefined 제거 후 저장
+    showSyncStatus('저장 중...');
     const payload = cleanForFirebase({
       patients, caregivers, rooms, logs,
       attendance, reportLogs, cfg, members
@@ -1283,7 +1281,7 @@ function save() {
         _fbPause = false;
         console.warn('Firebase 저장 실패:', e);
         showSyncStatus('저장 실패 ⚠️');
-        toast('⚠️ Firebase 저장 실패! 네트워크 확인해주세요', true);
+        toast('⚠️ 데이터베이스 저장 실패! 네트워크를 확인해주세요', true);
       });
   }, 300);
 }
@@ -1311,22 +1309,7 @@ function startFirebaseSync() {
       db = firebase.database();
 
       db.ref('cnc').on('value', snap => {
-        if(_fbPause) return; // 저장 중이면 스킵
-
-        // 저장 완료 후 2초 내 수신 = 내가 방금 저장한 데이터 → 덮어쓰기 방지
-        const isMyOwnSave = (Date.now() - _lastSaveTime) < 2000;
-        if(isMyOwnSave) {
-          // UI만 갱신 (데이터 덮어쓰기 없음)
-          if(_fbReady) {
-            try {
-              const ap = document.querySelector('.page.act')?.id;
-              if(ap==='page-patients')  renderPatients();
-              if(ap==='page-caregiver') renderCaregivers();
-              updateSidebar(); renderDashboard();
-            } catch(e) {}
-          }
-          return;
-        }
+        if(_fbPause) return; // 내가 저장 중이면 스킵
 
         const d = snap.val();
 
@@ -1472,14 +1455,53 @@ function showSyncStatus(msg, isErr) {
   if(!el) {
     el = document.createElement('div');
     el.id = 'fb-status';
-    el.style.cssText = 'position:fixed;top:12px;right:16px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;z-index:9999;transition:opacity .5s;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.15)';
+    el.style.cssText = [
+      'position:fixed',
+      'bottom:80px',        // 토스트 위에 표시
+      'left:50%',
+      'transform:translateX(-50%)',
+      'padding:10px 22px',
+      'border-radius:24px',
+      'font-size:13px',
+      'font-weight:700',
+      'z-index:99999',
+      'transition:opacity .4s',
+      'pointer-events:none',
+      'box-shadow:0 4px 16px rgba(0,0,0,.25)',
+      'white-space:nowrap',
+      'text-align:center'
+    ].join(';');
     document.body.appendChild(el);
   }
-  el.textContent = '☁️ ' + msg;
-  el.style.background = isErr ? 'var(--red)' : msg.includes('저장됨') ? '#0B7A6E' : msg.includes('실패') ? 'var(--red)' : 'rgba(11,122,110,.85)';
-  el.style.color = '#fff';
+
+  const isSaving  = msg.includes('저장 중');
+  const isSaved   = msg.includes('저장됨');
+  const isFail    = msg.includes('실패');
+  const isOffline = msg.includes('오프라인');
+
+  if(isSaving) {
+    el.textContent   = '☁️ 데이터베이스 저장 중...';
+    el.style.background = 'var(--amber)';
+  } else if(isSaved) {
+    el.textContent   = '✅ 데이터베이스 저장 완료!';
+    el.style.background = '#0B7A6E';
+  } else if(isFail) {
+    el.textContent   = '❌ 데이터베이스 저장 실패!';
+    el.style.background = '#dc2626';
+  } else if(isOffline) {
+    el.textContent   = '📵 오프라인 모드';
+    el.style.background = '#8A8780';
+  } else {
+    el.textContent   = '☁️ ' + msg;
+    el.style.background = 'rgba(11,122,110,.9)';
+  }
+
+  el.style.color   = '#fff';
   el.style.opacity = '1';
-  setTimeout(()=>{ el.style.opacity='0'; }, 3000);
+
+  const duration = isFail ? 5000 : isSaving ? 10000 : isSaved ? 3000 : 1500;
+  if(el._hideTimer) clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(()=>{ el.style.opacity='0'; }, duration);
 }
 
 // ─── TOAST ───
@@ -4395,20 +4417,37 @@ function checkInsuranceExpiry() {
   setTimeout(()=>{popup.style.display='none';},15000);
 }
 
+// 공유 AudioContext (사용자 제스처 후 생성)
+let _audioCtx = null;
+function getAudioCtx() {
+  if(!_audioCtx) {
+    _audioCtx = new(window.AudioContext||window.webkitAudioContext)();
+  }
+  if(_audioCtx.state === 'suspended') {
+    _audioCtx.resume();
+  }
+  return _audioCtx;
+}
+
+// 첫 클릭 시 AudioContext 초기화
+document.addEventListener('click', () => { getAudioCtx(); }, { once: true });
+
 function playBeep(type) {
   if(cfg.sound === false) return;
   try {
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const ctx = getAudioCtx();
+    if(!ctx || ctx.state === 'suspended') return; // 아직 사용자 제스처 없으면 스킵
     const freqs = type==='#insurance' ? [523,659,784] : [880,880,880];
     freqs.forEach((f,i)=>{
-      const osc=ctx.createOscillator();const gain=ctx.createGain();
-      osc.connect(gain);gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(f,ctx.currentTime+i*0.18);
-      gain.gain.setValueAtTime(0.35,ctx.currentTime+i*0.18);
-      gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.18+0.15);
-      osc.start(ctx.currentTime+i*0.18);osc.stop(ctx.currentTime+i*0.18+0.16);
+      const osc=ctx.createOscillator(); const gain=ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(f, ctx.currentTime+i*0.18);
+      gain.gain.setValueAtTime(0.35, ctx.currentTime+i*0.18);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+i*0.18+0.15);
+      osc.start(ctx.currentTime+i*0.18);
+      osc.stop(ctx.currentTime+i*0.18+0.16);
     });
-  } catch(e){}
+  } catch(e) {}
 }
 
 // 브라우저 알림 권한 요청
