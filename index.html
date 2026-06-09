@@ -1558,7 +1558,7 @@ ${cfg.name || '씨앤에이케어간병협회'}
 function getDayLabel(dateStr) {
   if(!dateStr) return '';
   const days=['일','월','화','수','목','금','토'];
-  const d=new Date(dateStr);
+  const d=parseLocalDate(dateStr);
   return isNaN(d.getTime())?'':days[d.getDay()]+'요일';
 }
 
@@ -2553,12 +2553,12 @@ function calcEndDateVal(p) {
 function calcEndDate() {
   const startVal = document.getElementById('cg-startDate')?.value;
   if(!startVal) return;
-  // 현재 연결된 환자 duration 찾기
   const pidEl = document.getElementById('cg-patientId');
   const pt = pidEl ? patients.find(p=>String(p.id)===pidEl.value) : null;
   const days = pt ? parseDurationDays(pt.duration) : null;
   if(!days) return;
-  const d = new Date(startVal);
+  const d = parseLocalDate(startVal); // UTC 파싱 버그 수정
+  if(!d) return;
   d.setDate(d.getDate() + days);
   const endEl = document.getElementById('cg-endDate');
   if(endEl) endEl.value = d.toISOString().split('T')[0];
@@ -3727,7 +3727,7 @@ function getAttendDate() {
 function shiftAttendDate(delta) {
   const el = document.getElementById('attend-date');
   if(!el) return;
-  const cur = new Date(el.value || todayStr());
+  const cur = parseLocalDate(el.value || todayStr());
   cur.setDate(cur.getDate() + delta);
   el.value = cur.toISOString().split('T')[0];
   renderAttendance();
@@ -4054,7 +4054,7 @@ function renderInsurance() {
     if(!c.insuranceActive) return 'none'; // 가입전
     if(c.insuranceTerminated) return 'expired'; // 만료처리 완료
     if(!c.insuranceExpiry) return 'active'; // 가입 (만료일 미입력)
-    const exp = new Date(c.insuranceExpiry); exp.setHours(0,0,0,0);
+    const exp = parseLocalDate(c.insuranceExpiry);
     const diff = Math.ceil((exp-today)/(1000*60*60*24));
     if(diff < 0) return 'expired'; // 만료됨
     return 'active'; // 가입중
@@ -4077,7 +4077,7 @@ function renderInsurance() {
   }
 
   el.innerHTML = list.map(c=>{
-    const exp = c.insuranceExpiry ? new Date(c.insuranceExpiry) : null;
+    const exp = c.insuranceExpiry ? parseLocalDate(c.insuranceExpiry) : null;
     if(exp) exp.setHours(0,0,0,0);
     const diff = exp ? Math.ceil((exp-today)/(1000*60*60*24)) : null;
     const statusColor = !c.insuranceActive ? 'var(--gray-lt)'
@@ -4359,7 +4359,7 @@ function checkInsuranceExpiry() {
   const expiring = caregivers.filter(c => {
     if(!c.insuranceExpiry || !c.insuranceActive) return false;
     if(c.insuranceTerminated) return false;  // 만료처리 완료된 건 알람 제외
-    const exp = new Date(c.insuranceExpiry); exp.setHours(0,0,0,0);
+    const exp = parseLocalDate(c.insuranceExpiry);
     const diff = Math.ceil((exp - today) / (1000*60*60*24));
     // 만료 전(0~days일 이내)만 알람 — 이미 지난 것(diff < 0)은 제외
     return diff >= 0 && diff <= days;
