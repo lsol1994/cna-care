@@ -946,9 +946,12 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <div class="card">
     <div class="card-hd"><span class="dot"></span>🗂 JSON 백업 / 복원</div>
     <p style="font-size:12px;color:var(--gray);margin-bottom:1rem;line-height:1.7">앱 전체 데이터를 JSON으로 백업하거나 복원해요.</p>
-    <div style="margin-bottom:.875rem">
+    <div style="margin-bottom:.875rem;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="fixRecruitDates()">
-        🔧 구인공고 날짜 정리 (잘못된 재모집날짜 초기화)
+        🔧 구인공고 날짜 정리
+      </button>
+      <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="fixEarlyEndData()">
+        🔧 중도종료 데이터 복구
       </button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -2813,7 +2816,7 @@ function renderCaregivers() {
           <button class="btn btn-sm" onclick="openCgDetail('${cg.id}')">상세</button>
           <button class="btn btn-sm" onclick="editCg('${cg.id}')">수정</button>
           ${cg.patientId&&cg.workStatus==='근무중'?`<button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="openEarlyTerminate('${cg.id}')">중도종료</button>`:''}
-          ${(cg.workStatus==='종료'&&(cg.earlyEndPatientId||cg.earlyEndSnapshot))?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
+          ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
           <button class="btn btn-sm btn-red" onclick="deleteCg('${cg.id}')">삭제</button>
         </div>
       </div>
@@ -2857,7 +2860,7 @@ function openCgDetail(id) {
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-teal btn-sm" onclick="closeOverlay('cg-overlay');editCg('${cg.id}')">수정</button>
       ${cg.patientId&&cg.workStatus==='근무중'?`<button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="closeOverlay('cg-overlay');openEarlyTerminate('${cg.id}')">중도종료</button>`:''}
-      ${(cg.workStatus==='종료'&&(cg.earlyEndPatientId||cg.earlyEndSnapshot))?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
+      ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
       <button class="btn btn-red btn-sm" onclick="deleteCg('${cg.id}')">삭제</button>
     </div>`;
   document.getElementById('cg-overlay').classList.add('open');
@@ -3471,7 +3474,60 @@ function buildEndReport(p, actualEndDate, actualEndTime) {
 }
 
 // ── 날짜 포맷 변환 ──
-// ─── 구인공고 날짜 강제 정리 ───
+// ─── 중도종료 데이터 복구 ───
+// 종료된 간병인 중 earlyEndPatientId 없는 경우 recruitHistory로 환자 찾아서 복구
+function fixEarlyEndData() {
+  let fixed = 0;
+
+  caregivers.forEach(cg => {
+    if(cg.workStatus !== '종료') return;
+    if(cg.earlyEndPatientId) return; // 이미 있으면 스킵
+
+    // 방법1: _snapshot에서 변환
+    if(cg._snapshot && cg._snapshot.patientId) {
+      cg.earlyEndPatientId = cg._snapshot.patientId;
+      cg.earlyEndSnapshot  = cg._snapshot;
+      delete cg._snapshot;
+      fixed++;
+      return;
+    }
+
+    // 방법2: feedback의 [중도종료]에서 이전 환자명 찾기
+    // 방법3: 이름+병원으로 환자 매칭
+    // 간병인 이름과 같은 caregiverName을 가진 환자 찾기
+    const matchedPt = patients.find(p =>
+      p.caregiverName === cg.name ||
+      (p.recruitHistory && p.recruitHistory.some(h => h.prevCg === cg.name))
+    );
+
+    if(matchedPt) {
+      cg.earlyEndPatientId = String(matchedPt.id);
+      cg.earlyEndSnapshot  = {
+        patientId:   String(matchedPt.id),
+        workStatus:  '근무중',
+        snapshotAt:  '자동복구',
+        patient: {
+          status:        '매칭완료',
+          recruited:     true,
+          caregiverName: cg.name,
+          endDate:       matchedPt.endDate || '',
+          endTime:       matchedPt.endTime || '',
+          recruitStartDate: matchedPt.recruitStartDate || '',
+          recruitHistory: JSON.parse(JSON.stringify(matchedPt.recruitHistory||[]))
+        }
+      };
+      fixed++;
+    }
+  });
+
+  if(fixed > 0) {
+    save();
+    renderCaregivers();
+    toast(`✅ ${fixed}명 중도종료 데이터 복구 완료! 이제 종료취소 버튼이 작동해요.`);
+  } else {
+    toast('복구할 데이터가 없어요 (이미 모두 복구됨)');
+  }
+}
 function fixRecruitDates() {
   let count = 0;
   patients.forEach(p => {
@@ -5338,9 +5394,14 @@ function normalizeTimes() {
   caregivers.forEach(c => {
     const st=normalizeTime(c.startTime); if(st!==c.startTime){c.startTime=st;changed=true;}
     const et=normalizeTime(c.endTime);   if(et!==c.endTime){c.endTime=et;changed=true;}
-  });
-  // workStatus 없는 간병인 기본값 설정
-  caregivers.forEach(c => {
+    // 구버전 _snapshot → 신버전 earlyEndPatientId/earlyEndSnapshot 자동 변환
+    if(c.workStatus === '종료' && c._snapshot && !c.earlyEndPatientId) {
+      c.earlyEndPatientId = c._snapshot.patientId || '';
+      c.earlyEndSnapshot  = c._snapshot;
+      delete c._snapshot;
+      changed = true;
+    }
+    // workStatus 없는 간병인 기본값
     if(!c.workStatus) {
       c.workStatus = '대기중';
       changed = true;
