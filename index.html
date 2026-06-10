@@ -3931,15 +3931,16 @@ function autoFillAttendance(cgId) {
 
   const today   = todayStr();
   const endDate = cg.endDate || today;
-  const end = parseLocalDate(endDate);
-  if(!end) return 0;
 
   let added = 0;
   const cur = parseLocalDate(cg.startDate);
   if(!cur) return 0;
 
-  while(cur <= end) {
+  while(true) {
     const dateStr = toLocalDateStr(cur);
+    // 날짜 문자열로 비교 (Date 객체 간 시간 포함 비교 오류 방지)
+    if(dateStr > endDate) break;
+
     const isFirst = dateStr === cg.startDate;
 
     // 기존 기록 확인 (신/구버전 모두)
@@ -3949,19 +3950,16 @@ function autoFillAttendance(cgId) {
 
     if(!existing) {
       if(isFirst) {
-        // 시작일: startTime으로 출근, 퇴근은 23:59
-        const inTime = cg.startTime || '';
         attendance.push({
           cgId:    String(cgId),
           inDate:  dateStr,
-          inTime:  inTime,   // 서비스 시작시간 (비어있으면 직접 체크)
+          inTime:  cg.startTime || '',
           outDate: dateStr,
           outTime: '23:59',
           auto:    true
         });
         added++;
       } else {
-        // 나머지 날: 출근 00:00 / 퇴근 23:59
         attendance.push({
           cgId:    String(cgId),
           inDate:  dateStr,
@@ -3973,13 +3971,11 @@ function autoFillAttendance(cgId) {
         added++;
       }
     } else {
-      // 출근 있고 퇴근 없으면 23:59 자동 채움
       if(existing.inTime && !existing.outTime) {
         existing.outDate = dateStr;
         existing.outTime = '23:59';
         added++;
       }
-      // 시작일인데 startTime 없으면 채워줌
       if(isFirst && !existing.inTime && cg.startTime) {
         existing.inTime = cg.startTime;
         added++;
@@ -3992,6 +3988,7 @@ function autoFillAttendance(cgId) {
   if(added > 0) save();
   return added;
 }
+
 
 function autoFillAllAttendance() {
   let total = 0;
