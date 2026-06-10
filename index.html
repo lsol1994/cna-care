@@ -3685,6 +3685,100 @@ function ptDdayBadge(p) {
 }
 
 // ─── 시작일/마감일 리마인드 ───
+// ─── 간병인 급여 리마인드 ───
+// 규칙:
+// - 8일 이상: 시작일+8일 다음날이 첫 주급일, 이후 매주 같은 요일
+// - 7일 이하: 마감일 당일 지급 (주말이면 전 금요일 예약이체)
+function calcPayDates(cg) {
+  if(!cg.startDate) return [];
+  const results = [];
+  const start = parseLocalDate(cg.startDate);
+  if(!start) return [];
+
+  // 간병 기간(일수) 계산
+  let totalDays = null;
+  if(cg.endDate) {
+    const end = parseLocalDate(cg.endDate);
+    if(end) totalDays = Math.round((end - start) / 86400000);
+  } else if(cg.patientId) {
+    const pt = patients.find(p=>String(p.id)===String(cg.patientId));
+    if(pt && pt.duration) totalDays = parseDurationDays(pt.duration);
+  }
+
+  if(totalDays !== null && totalDays <= 7) {
+    // 7일 이하: 마감일 당일 지급
+    const payDate = parseLocalDate(cg.endDate || toLocalDateStr(new Date(start.getTime() + totalDays*86400000)));
+    if(!payDate) return [];
+    const dow = payDate.getDay(); // 0=일, 6=토
+    if(dow === 0 || dow === 6) {
+      // 주말 → 전 금요일
+      const fri = new Date(payDate);
+      fri.setDate(fri.getDate() - (dow === 6 ? 1 : 2));
+      results.push({ date: toLocalDateStr(fri), label: '1주 이내 급여', isReserve: true, endDate: toLocalDateStr(payDate) });
+    } else {
+      results.push({ date: toLocalDateStr(payDate), label: '1주 이내 급여', isReserve: false, endDate: toLocalDateStr(payDate) });
+    }
+  } else {
+    // 8일 이상: 주급 계산
+    // 1주차 근무 마감: 시작일 + 7일 (8일째)
+    // 첫 주급 지급일: 시작일 + 8일 (9일째, 마감 다음날)
+    const firstPay = new Date(start);
+    firstPay.setDate(firstPay.getDate() + 8);
+    const payDow = firstPay.getDay(); // 첫 주급 요일 고정
+
+    const endDate = cg.endDate ? parseLocalDate(cg.endDate) : null;
+    const maxDate = endDate || new Date(start.getTime() + 26*7*86400000);
+
+    let cur = new Date(firstPay);
+    let week = 1;
+    while(cur <= maxDate) {
+      const dateStr = toLocalDateStr(cur);
+      const dow = cur.getDay();
+      const isReserve = dow === 0 || dow === 6;
+      let remindDate = dateStr;
+      if(isReserve) {
+        const fri = new Date(cur);
+        fri.setDate(fri.getDate() - (dow === 6 ? 1 : 2));
+        remindDate = toLocalDateStr(fri);
+      }
+      results.push({ date: remindDate, payDate: dateStr, label: `${week}주차 주급`, isReserve, week });
+      cur.setDate(cur.getDate() + 7);
+      week++;
+    }
+  }
+  return results;
+}
+
+function checkPayRemind() {
+  const today = todayStr();
+  const alerts = [];
+
+  caregivers.filter(c => c.workStatus === '근무중' && c.startDate).forEach(cg => {
+    const payDates = calcPayDates(cg);
+    payDates.forEach(p => {
+      if(p.date === today) {
+        const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
+        const ptName = pt ? pt.name : '';
+        if(p.isReserve) {
+          alerts.push(`💰 <b>${cg.name}</b> ${p.label} <span style="color:var(--amber)">[예약이체]</span> (${p.payDate||p.endDate} 마감)`);
+        } else {
+          alerts.push(`💰 <b>${cg.name}</b> ${p.label} 지급일${ptName?' ('+ptName+')':''}`);
+        }
+      }
+    });
+  });
+
+  if(alerts.length > 0) {
+    const popup = document.getElementById('remind-popup');
+    document.getElementById('remind-popup-body').innerHTML =
+      `💰 <b>급여 지급 알림</b>\n\n` +
+      alerts.map(a=>`<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.15)">${a}</div>`).join('');
+    popup.style.display = 'block';
+    if(cfg.sound !== false) playBeep();
+    setTimeout(()=>{ popup.style.display='none'; }, 20000);
+  }
+}
+
 function checkDateRemind() {
   const today = new Date(); today.setHours(0,0,0,0);
   const alerts = [];
@@ -4194,12 +4288,15 @@ function startRemind() {
   setInterval(checkDateRemind, 60 * 60 * 1000);
   // 출퇴근 자동 채우기 1시간마다
   setInterval(autoFillAllAttendance, 60 * 60 * 1000);
+  // 급여 리마인드 1시간마다
+  setInterval(checkPayRemind, 60 * 60 * 1000);
   // 5분마다 자동저장
   setInterval(autoSave, 5 * 60 * 1000);
   // 시작 시 즉시 체크
   setTimeout(checkInsuranceExpiry, 3000);
   setTimeout(checkAutoEnd, 2000);
   setTimeout(checkDateRemind, 5000);
+  setTimeout(checkPayRemind, 6000); // 앱 시작 시 급여 알림 체크
   setTimeout(autoFillAllAttendance, 7000);
 }
 
