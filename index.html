@@ -2073,21 +2073,39 @@ function savePatientEdit(id) {
   } else {
     delete p.recruitStartDate;
   }
-  save();
-  renderPatients();
-  renderDashboard();
-  updateSidebar();
-
-  // 매칭된 간병인 간병비 자동 업데이트 (환자 일급 - 5,000원)
-  if(p.pay) {
-    const cgPay = Math.max(0, Number(p.pay) - 5000);
-    const matched = caregivers.filter(c=>String(c.patientId)===String(p.id));
-    if(matched.length > 0) {
+  // 매칭된 간병인 업데이트
+  const matched = caregivers.filter(c=>String(c.patientId)===String(p.id));
+  if(matched.length > 0) {
+    // ① 간병비 자동 업데이트 (환자 일급 - 5,000원)
+    if(p.pay) {
+      const cgPay = Math.max(0, Number(p.pay) - 5000);
       matched.forEach(c=>{ c.pay = String(cgPay); });
-      toast(`✅ 환자 정보 수정 + 간병인 간병비 자동 업데이트 (${cgPay.toLocaleString()}원)`);
-    } else {
-      toast('✅ 환자 정보가 수정됐어요');
     }
+
+    // ② 마감일 동시 업데이트 (startDate + duration 기반)
+    let newEndDate = p.endDate || '';
+    let newEndTime = p.endTime || p.startTime || '';
+    if(!newEndDate && p.startDate && p.duration) {
+      const days = parseDurationDays(p.duration);
+      if(days) {
+        const d = parseLocalDate(p.startDate);
+        if(d) {
+          d.setDate(d.getDate() + days);
+          newEndDate = toLocalDateStr(d);
+          newEndTime = p.startTime || '';
+        }
+      }
+    }
+    if(newEndDate) {
+      matched.forEach(c=>{
+        c.endDate = newEndDate;
+        c.endTime = newEndTime;
+        c.startDate = p.startDate || c.startDate;
+        c.startTime = p.startTime || c.startTime;
+      });
+    }
+
+    toast(`✅ 환자 정보 수정 + 간병인 정보 동시 업데이트됐어요`);
   } else {
     toast('✅ 환자 정보가 수정됐어요');
   }
@@ -2097,7 +2115,10 @@ function savePatientEdit(id) {
     p._editedPost = smartUpdatePost(p._editedPost, p);
   }
   save();
-
+  renderPatients();
+  renderCaregivers();
+  renderDashboard();
+  updateSidebar();
   openPatient(id);
 }
 
@@ -2794,8 +2815,12 @@ function renderCaregivers() {
         <span>🏥 ${cg.hospital||'—'}</span>
         <span>📅 ${cg.startDate||'—'} ${cg.startTime||''} → ${cg.endDate||'—'} ${cg.endTime||''}</span>
         <span>📞 ${formatPhone(cg.phone)||'—'}</span>
-        <span>💰 ${cg.pay?Number(cg.pay).toLocaleString()+'원':'—'}</span>
+        <span>💰 ${cg.pay?Number(cg.pay).toLocaleString()+'원/일':'—'}</span>
         ${cg.specialty?`<span>⭐ ${cg.specialty}</span>`:''}
+        ${(()=>{
+          const total = calcTotalPay(cg);
+          return total ? `<span style="color:var(--teal);font-weight:700">💵 총 ${total}</span>` : '';
+        })()}
       </div>
       ${(()=>{
         const pt = cg.patientId ? patients.find(p=>String(p.id)===String(cg.patientId)) : null;
@@ -2827,13 +2852,14 @@ function openCgDetail(id) {
   const cg=caregivers.find(x=>String(x.id)===String(id));
   if(!cg){toast('간병인 정보를 찾을 수 없어요',true);return;}
   const pt=cg.patientId?patients.find(p=>String(p.id)===String(cg.patientId)):null;
+  const totalPay = calcTotalPay(cg);
   document.getElementById('cg-modal-title').textContent=cg.name+' 간병인 상세';
   document.getElementById('cg-form-body').innerHTML=`
     <div class="g2" style="margin-bottom:.875rem">
       ${[
         ['이름',cg.name],['나이/성별',(cg.age||'—')+'세 '+cg.gender],
         ['연락처',cg.phone||'—'],['거주지',cg.region||'—'],
-        ['근무상태',cg.workStatus||'—'],['간병비',cg.pay?Number(cg.pay).toLocaleString()+'원':'—'],
+        ['근무상태',cg.workStatus||'—'],['일급',cg.pay?Number(cg.pay).toLocaleString()+'원':'—'],
         ['경력',cg.career||'—'],['특화분야',cg.specialty||'—'],
         ['은행',cg.bankName+' '+cg.bankAccount+' ('+cg.bankHolder+')'],
         ['사고이력',cg.accident||'—'],
@@ -2842,6 +2868,10 @@ function openCgDetail(id) {
         <div style="font-size:13px;font-weight:600">${v||'—'}</div>
       </div>`).join('')}
     </div>
+    ${totalPay ? `<div style="background:var(--teal-lt);border:1px solid rgba(11,122,110,.2);border-radius:var(--rsm);padding:10px 14px;margin-bottom:.875rem;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;color:var(--teal);font-weight:600">💵 총 간병비</span>
+      <span style="font-size:16px;font-weight:900;color:var(--teal)">${totalPay}</span>
+    </div>` : ''}
     ${cg.feedback?`<div style="font-size:12px;color:var(--gray);background:var(--surface2);border-radius:var(--rsm);padding:8px 10px;margin-bottom:.875rem">💬 보호자 피드백: ${cg.feedback}</div>`:''}
     <div class="hr"></div>
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray);margin-bottom:8px">🔗 매칭 환자</div>
@@ -3068,7 +3098,7 @@ function cancelEarlyTerminate(cgId) {
     const pt = patients.find(p=>String(p.id)===String(ptId));
     if(pt) {
       if(snap && snap.patient) {
-        // 스냅샷으로 정확히 복원
+        // 스냅샷으로 정확히 복원 (중도종료 전 recruitHistory로 덮어씀)
         pt.status           = snap.patient.status || '매칭완료';
         pt.recruited        = snap.patient.recruited !== false;
         pt.caregiverName    = snap.patient.caregiverName || cg.name;
@@ -3078,10 +3108,17 @@ function cancelEarlyTerminate(cgId) {
         pt.recruitHistory   = JSON.parse(JSON.stringify(snap.patient.recruitHistory||[]));
         delete pt.endReason;
       } else {
-        // 스냅샷 없으면 매칭완료로 직접 설정
+        // 스냅샷 없으면 매칭완료로 설정 + recruitHistory에서 이 간병인 이력 제거
         pt.status        = '매칭완료';
         pt.recruited     = true;
         pt.caregiverName = cg.name;
+        // recruitHistory에서 이 간병인이 prevCg인 항목 제거
+        if(pt.recruitHistory && pt.recruitHistory.length) {
+          pt.recruitHistory = pt.recruitHistory.filter(h => h.prevCg !== cg.name);
+          if(pt.recruitHistory.length === 0) delete pt.recruitHistory;
+        }
+        // recruitStartDate도 초기화 (재모집 날짜 제거)
+        if(pt.recruitStartDate) delete pt.recruitStartDate;
       }
     }
   }
@@ -3827,7 +3864,39 @@ function ptDdayBadge(p) {
 }
 
 // ─── 시작일/마감일 리마인드 ───
-// ─── 간병인 급여 리마인드 ───
+// ─── 총 간병비 계산 ───
+// 24시간 기준: startDate+startTime ~ endDate+endTime
+function calcTotalPay(cg) {
+  if(!cg.pay || !cg.startDate || !cg.endDate) return '';
+  const payPerDay = Number(cg.pay);
+  if(!payPerDay) return '';
+
+  const start = parseLocalDate(cg.startDate);
+  const end   = parseLocalDate(cg.endDate);
+  if(!start || !end) return '';
+
+  // 날짜 차이 (일수)
+  let days = Math.round((end - start) / 86400000);
+
+  // 24시간 기준 시간 보정
+  // 예: 6/4 16:00 ~ 6/6 16:00 = 2일
+  if(cg.startTime && cg.endTime) {
+    const [sh, sm] = cg.startTime.split(':').map(Number);
+    const [eh, em] = cg.endTime.split(':').map(Number);
+    const startMin = sh*60+sm;
+    const endMin   = eh*60+em;
+    // 마감시간이 시작시간보다 늦으면 정확히 N일
+    // 마감시간이 시작시간보다 이르면 N-1일 + 잔여시간
+    if(endMin < startMin) {
+      // 예: 10:00 시작 ~ 08:00 마감이면 온전한 하루가 안 됨
+      // 비즈니스 규칙상 날짜 단위로만 계산
+    }
+  }
+
+  if(days <= 0) return '';
+  const total = payPerDay * days;
+  return `${days}일 × ${payPerDay.toLocaleString()}원 = ${total.toLocaleString()}원`;
+}
 // 규칙:
 // - 8일 이상: 시작일+8일 다음날이 첫 주급일, 이후 매주 같은 요일
 // - 7일 이하: 마감일 당일 지급 (주말이면 전 금요일 예약이체)
