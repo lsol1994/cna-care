@@ -1223,18 +1223,26 @@ function loadFirebase() {
     s1.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js';
     s1.crossOrigin = 'anonymous';
     s1.onload = () => {
-      // firebase-database 로드
-      const s2 = document.createElement('script');
-      s2.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js';
-      s2.crossOrigin = 'anonymous';
-      s2.onload = () => resolve(true);
-      s2.onerror = () => resolve(false);
-      document.head.appendChild(s2);
+      // firebase-auth 로드
+      const sAuth = document.createElement('script');
+      sAuth.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js';
+      sAuth.crossOrigin = 'anonymous';
+      sAuth.onload = () => {
+        // firebase-database 로드
+        const s2 = document.createElement('script');
+        s2.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js';
+        s2.crossOrigin = 'anonymous';
+        s2.onload = () => resolve(true);
+        s2.onerror = () => resolve(false);
+        document.head.appendChild(s2);
+      };
+      sAuth.onerror = () => resolve(false);
+      document.head.appendChild(sAuth);
     };
     s1.onerror = () => resolve(false);
     document.head.appendChild(s1);
-    // 3초 타임아웃 - 모바일 네트워크 대응
-    setTimeout(() => resolve(false), 3000);
+    // 5초 타임아웃 - 모바일 네트워크 대응
+    setTimeout(() => resolve(false), 5000);
   });
 }
 
@@ -1417,8 +1425,24 @@ function startFirebaseSync() {
         appId:             "1:682938308807:web:6de27f04f77f2d08ca46e2"
       };
       if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-      db = firebase.database();
-      attachFirebaseListener();
+
+      // 익명 인증 후 DB 연결 (보안 규칙 auth != null 대응)
+      if(firebase.auth) {
+        firebase.auth().signInAnonymously()
+          .then(() => {
+            db = firebase.database();
+            attachFirebaseListener();
+          })
+          .catch(e => {
+            console.warn('익명 인증 실패, 인증 없이 연결 시도:', e);
+            // 익명 인증이 꺼져있으면 기존 방식으로 연결 (하위 호환)
+            db = firebase.database();
+            attachFirebaseListener();
+          });
+      } else {
+        db = firebase.database();
+        attachFirebaseListener();
+      }
     } catch(e) {
       showSyncStatus('오프라인 모드');
       console.warn('Firebase 초기화 실패:', e);
