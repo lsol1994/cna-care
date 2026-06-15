@@ -2106,6 +2106,19 @@ function savePatientEdit(id) {
   p.duration  = document.getElementById('ep-duration').value.trim();
   p.pay       = document.getElementById('ep-pay').value;
   p.request   = document.getElementById('ep-request').value.trim();
+
+  // duration 또는 startDate 변경 시 endDate 자동 재계산
+  if(p.startDate && p.duration) {
+    const days = parseDurationDays(p.duration);
+    if(days) {
+      const d = parseLocalDate(p.startDate);
+      if(d) {
+        d.setDate(d.getDate() + days);
+        p.endDate = toLocalDateStr(d);
+        p.endTime = p.startTime || p.endTime || '';
+      }
+    }
+  }
   // 재모집 시작일 - 비어있으면 제거, 있으면 저장
   const recruitDate = document.getElementById('ep-recruitStartDate')?.value || '';
   if(recruitDate && recruitDate !== p.startDate) {
