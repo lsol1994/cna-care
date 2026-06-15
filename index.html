@@ -1742,9 +1742,25 @@ function renderDashboard() {
   document.getElementById('d-active').textContent  = patients.filter(p=>p.status==='모집중').length;
   document.getElementById('d-matched').textContent = patients.filter(p=>p.status==='매칭완료').length;
   document.getElementById('d-sent').textContent    = logs.length;
-  const el=document.getElementById('d-recent');
-  if(!patients.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><p>등록된 환자가 없어요</p></div>';return;}
-  el.innerHTML = patients.slice(0,5).map(p=>ptRowHTML(p)).join('');
+  const el = document.getElementById('d-recent');
+  if(!patients.length) {
+    el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><p>등록된 환자가 없어요</p></div>';
+    return;
+  }
+  // 종료 제외 + 시작일 순 정렬 후 5명
+  const list = [...patients]
+    .filter(p => p.status !== '종료')
+    .sort((a,b) => (a.startDate||'9999').localeCompare(b.startDate||'9999'))
+    .slice(0, 5);
+  // 종료 제외 후 5명 안 되면 종료 환자도 추가
+  if(list.length < 5) {
+    const ended = [...patients]
+      .filter(p => p.status === '종료')
+      .sort((a,b) => (b.startDate||'').localeCompare(a.startDate||''))
+      .slice(0, 5 - list.length);
+    list.push(...ended);
+  }
+  el.innerHTML = list.map(p => ptRowHTML(p)).join('');
 }
 
 // ─── STATUS BADGE ───
@@ -2143,7 +2159,12 @@ function savePatientEdit(id) {
   renderCaregivers();
   renderDashboard();
   updateSidebar();
-  openPatient(id);
+  // 모달 닫고 환자관리 목록에서 해당 환자 카드로 스크롤
+  document.getElementById('pt-overlay').classList.remove('open');
+  setTimeout(()=>{
+    const card = document.getElementById('ptrow-'+id);
+    if(card) card.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 100);
 }
 
 function changeStatus(id, status) {
