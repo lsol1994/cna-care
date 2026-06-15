@@ -1275,34 +1275,51 @@ function save() {
   localStorage.setItem('cnc_members',   JSON.stringify(members));
 
   // 2. Firebase 저장 (300ms 디바운스)
-  if(!db) return;
+  if(!db) { showSyncStatus('저장 중... (연결 대기)'); return; }
   if(_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    // 저장 전 리스너 완전 제거 (이전 데이터 덮어쓰기 방지)
-    _fbPause = true;
-    db.ref('cnc').off();
-
-    showSyncStatus('저장 중...');
-    const payload = cleanForFirebase({
-      patients, caregivers, rooms, logs,
-      attendance, reportLogs, cfg, members
-    });
-
-    db.ref('cnc').set(payload)
-      .then(() => {
-        showSyncStatus('저장됨');
-        // 저장 완료 후 1초 뒤 리스너 재연결
-        setTimeout(() => {
+    // 인증 확인 후 저장
+    const doSave = () => {
+      _fbPause = true;
+      db.ref('cnc').off();
+      showSyncStatus('저장 중...');
+      const payload = cleanForFirebase({
+        patients, caregivers, rooms, logs,
+        attendance, reportLogs, cfg, members
+      });
+      db.ref('cnc').set(payload)
+        .then(() => {
+          showSyncStatus('저장됨');
+          setTimeout(() => {
+            _fbPause = false;
+            attachFirebaseListener();
+          }, 1000);
+        }).catch(e => {
           _fbPause = false;
           attachFirebaseListener();
-        }, 1000);
-      }).catch(e => {
-        _fbPause = false;
-        attachFirebaseListener(); // 실패해도 리스너 재연결
-        console.warn('Firebase 저장 실패:', e);
-        showSyncStatus('저장 실패 ⚠️');
-        toast('⚠️ 데이터베이스 저장 실패! 네트워크를 확인해주세요', true);
-      });
+          console.warn('Firebase 저장 실패:', e);
+          showSyncStatus('저장 실패 ⚠️');
+          toast('⚠️ 데이터베이스 저장 실패! 네트워크를 확인해주세요', true);
+        });
+    };
+
+    // 익명 인증 확인
+    if(firebase && firebase.auth) {
+      const user = firebase.auth().currentUser;
+      if(user) {
+        doSave();
+      } else {
+        // 인증 안 됐으면 재인증 후 저장
+        firebase.auth().signInAnonymously()
+          .then(doSave)
+          .catch(e => {
+            console.warn('인증 실패:', e);
+            doSave(); // 인증 실패해도 저장 시도
+          });
+      }
+    } else {
+      doSave();
+    }
   }, 300);
 }
 
