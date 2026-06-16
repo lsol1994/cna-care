@@ -1682,9 +1682,12 @@ function buildPost(p) {
     p.weight ? p.weight+'kg' : ''
   ].filter(Boolean).join(', ');
 
+  // 병원명에서 호실 제거 (예: "서울아산병원 153동 33호" → "서울아산병원")
+  const hospitalOnly = (p.hospital||'—').replace(/\s*\d+동\s*\d+호.*$/,'').replace(/\s*\d+호.*$/,'').trim();
+
   return `🚨[구인]🚨${titleGender}간병인 선생님 구합니다 🙏
 
-🏥 병원위치 : ${p.hospital || '—'}
+🏥 병원위치 : ${hospitalOnly}
 📅 간병시작일 : ${postStartDate || '—'}${days?' ('+days+')':''} ${p.startTime || ''}
 👤 환자분 : ${p.gender||''}${ageWeight?' / '+ageWeight:''} / ${state || '—'}
 💰 가격 : ${pay} / 식사없음
