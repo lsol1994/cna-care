@@ -412,6 +412,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <button class="top-tab" id="tt-caregiver" onclick="showPage('caregiver')">간병인 관리</button>
   <button class="top-tab" id="tt-report" onclick="showPage('report')" style="color:var(--amber);font-weight:700">📋 업체보고</button>
   <button class="top-tab" id="tt-members" onclick="showPage('members')" style="color:var(--blue);font-weight:700">🏢 협회 간병인</button>
+  <button class="top-tab" id="tt-memo" onclick="showPage('memo')" style="color:var(--teal);font-weight:700">📝 업무일지</button>
   <button class="top-tab" id="tt-log" onclick="showPage('log')">발송 기록</button>
   <button class="top-tab" id="tt-settings" onclick="showPage('settings')">설정</button>
 </div>
@@ -443,8 +444,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <button class="aside-btn" id="mb-members" onclick="showPage('members')" style="color:var(--blue);font-weight:700">
     <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>협회 간병인
   </button>
+  <button class="aside-btn" id="mb-memo" onclick="showPage('memo')" style="color:var(--teal);font-weight:700">
+    <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>업무일지
+  </button>
   <div class="aside-divider"></div>
-  <div class="aside-lbl">현황</div>
   <div class="aside-stat"><span class="l">모집중</span><span class="v" id="s-recruiting">0</span></div>
   <div class="aside-stat"><span class="l">미구인 알람</span><span class="v" id="s-alarm">0</span></div>
   <div class="aside-stat"><span class="l">매칭완료</span><span class="v" id="s-matched">0</span></div>
@@ -795,6 +798,80 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     <button class="btn btn-red btn-sm" onclick="clearLogs()">초기화</button>
   </div>
   <div class="card"><div id="log-wrap"></div></div>
+</div>
+
+<!-- ══ MEMO ══ -->
+<div class="page" id="page-memo">
+  <div class="sh">
+    <div><div class="sh-title">📝 업무일지</div><div class="sh-sub">날짜별 업무 기록 및 환자/간병인 메모</div></div>
+    <button class="btn btn-teal btn-sm" onclick="addMemoEntry()">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>새 일지 작성
+    </button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:1rem">
+    <!-- 왼쪽: 업무일지 목록 -->
+    <div>
+      <div class="card">
+        <div class="card-hd" style="justify-content:space-between">
+          <div><span class="dot"></span>업무일지</div>
+          <input type="month" id="memo-month" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)" onchange="renderMemo()">
+        </div>
+        <div id="memo-list"></div>
+      </div>
+    </div>
+
+    <!-- 오른쪽: 작성/상세 -->
+    <div>
+      <div class="card" id="memo-editor" style="display:none">
+        <div class="card-hd" style="justify-content:space-between">
+          <div><span class="dot"></span><span id="memo-editor-title">일지 작성</span></div>
+          <button class="btn btn-sm" onclick="document.getElementById('memo-editor').style.display='none'">✕</button>
+        </div>
+        <div class="field">
+          <label>날짜</label>
+          <input type="date" id="memo-date">
+        </div>
+        <div class="field">
+          <label>작성자</label>
+          <input type="text" id="memo-author" placeholder="이름 입력">
+        </div>
+        <div class="field">
+          <label>내용</label>
+          <textarea id="memo-content" rows="8" placeholder="업무 내용, 특이사항, 공유할 내용을 자유롭게 작성하세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
+        </div>
+        <div class="field">
+          <label>관련 환자 <span style="font-size:10px;color:var(--gray)">(선택)</span></label>
+          <select id="memo-patient" style="font-size:13px">
+            <option value="">— 없음 —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>관련 간병인 <span style="font-size:10px;color:var(--gray)">(선택)</span></label>
+          <select id="memo-caregiver" style="font-size:13px">
+            <option value="">— 없음 —</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:1rem">
+          <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveMemoEntry()">저장</button>
+          <button class="btn" id="memo-delete-btn" style="color:var(--red);border-color:var(--red);display:none" onclick="deleteMemoEntry()">삭제</button>
+        </div>
+      </div>
+
+      <!-- 환자/간병인 메모 -->
+      <div class="card" style="margin-top:1rem">
+        <div class="card-hd"><span class="dot"></span>빠른 메모</div>
+        <div class="field">
+          <label>환자 선택</label>
+          <select id="quick-memo-pt" onchange="loadQuickMemo()" style="font-size:13px">
+            <option value="">— 환자 선택 —</option>
+          </select>
+        </div>
+        <textarea id="quick-memo-content" rows="4" placeholder="이 환자에 대한 메모..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
+        <button class="btn btn-teal btn-sm" style="margin-top:8px" onclick="saveQuickMemo()">메모 저장</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ══ SETTINGS ══ -->
@@ -1203,6 +1280,7 @@ let attendance = JSON.parse(localStorage.getItem('cnc_attend')    || '[]');
 let reportLogs = JSON.parse(localStorage.getItem('cnc_rptlogs')   || '[]');
 let cfg        = JSON.parse(localStorage.getItem('cnc_cfg')       || '{"name":"씨앤에이케어간병협회","phone":"","sheetsUrl":"","remindInterval":15,"insuranceDays":3,"sound":true,"bankName":"","bankAccount":"","bankHolder":""}');
 let members    = JSON.parse(localStorage.getItem('cnc_members')   || '[]');
+let memos      = JSON.parse(localStorage.getItem('cnc_memos')     || '[]');
 
 let selPt          = null;
 let editCgId       = null;
@@ -1276,6 +1354,7 @@ function save() {
   localStorage.setItem('cnc_rptlogs',   JSON.stringify(reportLogs));
   localStorage.setItem('cnc_cfg',       JSON.stringify(cfg));
   localStorage.setItem('cnc_members',   JSON.stringify(members));
+  localStorage.setItem('cnc_memos',     JSON.stringify(memos));
 
   // 2. Firebase 저장 (300ms 디바운스)
   if(!db) { showSyncStatus('저장 중... (연결 대기)'); return; }
@@ -1288,7 +1367,7 @@ function save() {
       showSyncStatus('저장 중...');
       const payload = cleanForFirebase({
         patients, caregivers, rooms, logs,
-        attendance, reportLogs, cfg, members
+        attendance, reportLogs, cfg, members, memos
       });
       db.ref('cnc').set(payload)
         .then(() => {
@@ -1400,6 +1479,8 @@ function attachFirebaseListener() {
     if(fbReportLogs.length > 0) { reportLogs = fbReportLogs; localStorage.setItem('cnc_rptlogs', JSON.stringify(reportLogs)); }
     if(fbMembers.length > 0)    { members    = fbMembers;    localStorage.setItem('cnc_members', JSON.stringify(members)); }
     if(d.cfg && typeof d.cfg === 'object') { cfg = d.cfg; localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
+    const fbMemos = fbToArr(d.memos);
+    if(fbMemos.length > 0) { memos = fbMemos; localStorage.setItem('cnc_memos', JSON.stringify(memos)); }
 
     if(!_fbReady) {
       _fbReady = true;
@@ -1546,7 +1627,7 @@ function showPage(name) {
   if(m) m.classList.add('act');
   const tt=document.getElementById('tt-'+name);
   if(tt) tt.classList.add('act');
-  const fns={dashboard:renderDashboard,patients:renderPatients,send:renderSend,caregiver:renderCaregivers,log:renderLog,settings:loadSettings,report:renderReport,members:renderMembers};
+  const fns={dashboard:renderDashboard,patients:renderPatients,send:renderSend,caregiver:renderCaregivers,log:renderLog,settings:loadSettings,report:renderReport,members:renderMembers,memo:initMemoPage};
   if(fns[name]) fns[name]();
   updateSidebar();
 }
@@ -3974,6 +4055,133 @@ function calcTotalPay(cg) {
   const total = payPerDay * days;
   return `${days}일 × ${payPerDay.toLocaleString()}원 = ${total.toLocaleString()}원`;
 }
+// ─── 업무일지 ───
+let editMemoId = null;
+
+function renderMemo() {
+  const el = document.getElementById('memo-list');
+  if(!el) return;
+  const monthEl = document.getElementById('memo-month');
+  const selMonth = monthEl ? monthEl.value : '';
+  let list = [...memos].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(selMonth) list = list.filter(m=>(m.date||'').startsWith(selMonth));
+  if(!list.length) {
+    el.innerHTML = '<div class="empty" style="padding:1.5rem 0"><p>작성된 일지가 없어요</p></div>';
+    return;
+  }
+  const groups = {};
+  list.forEach(m => { const d=m.date||'날짜없음'; if(!groups[d])groups[d]=[]; groups[d].push(m); });
+  const DAYS=['일','월','화','수','목','금','토'];
+  el.innerHTML = Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(date => {
+    const d = parseLocalDate(date);
+    const dayStr = d ? `(${DAYS[d.getDay()]}요일)` : '';
+    return `<div style="margin-bottom:1rem">
+      <div style="font-size:11px;font-weight:700;color:var(--teal);padding:6px 0;border-bottom:2px solid var(--teal-lt);margin-bottom:6px">📅 ${date} ${dayStr}</div>
+      ${groups[date].map(m=>`
+        <div style="background:var(--surface2);border-radius:var(--rsm);padding:10px 12px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border)" onclick="editMemoEntry('${m.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:12px;font-weight:700">${m.author||'작성자 없음'}</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              ${m.patientId?`<span class="badge b-teal" style="font-size:10px">🏥 ${patients.find(p=>String(p.id)===String(m.patientId))?.name||'환자'}</span>`:''}
+              ${m.caregiverId?`<span class="badge b-blue" style="font-size:10px">👤 ${caregivers.find(c=>String(c.id)===String(m.caregiverId))?.name||'간병인'}</span>`:''}
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.6">${(m.content||'').slice(0,80)}${(m.content||'').length>80?'...':''}</div>
+        </div>
+      `).join('')}
+    </div>`;
+  }).join('');
+}
+
+function addMemoEntry() {
+  editMemoId = null;
+  document.getElementById('memo-editor').style.display = 'block';
+  document.getElementById('memo-editor-title').textContent = '새 일지 작성';
+  document.getElementById('memo-date').value   = todayStr();
+  document.getElementById('memo-author').value = cfg.name || '';
+  document.getElementById('memo-content').value = '';
+  document.getElementById('memo-delete-btn').style.display = 'none';
+  const ptSel = document.getElementById('memo-patient');
+  ptSel.innerHTML = '<option value="">— 없음 —</option>' +
+    patients.map(p=>`<option value="${p.id}">${p.name} (${p.hospital||''})</option>`).join('');
+  const cgSel = document.getElementById('memo-caregiver');
+  cgSel.innerHTML = '<option value="">— 없음 —</option>' +
+    caregivers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  ptSel.value = ''; cgSel.value = '';
+}
+
+function editMemoEntry(id) {
+  const m = memos.find(x=>String(x.id)===String(id));
+  if(!m) return;
+  editMemoId = id;
+  addMemoEntry();
+  document.getElementById('memo-editor-title').textContent = '일지 수정';
+  document.getElementById('memo-date').value      = m.date||'';
+  document.getElementById('memo-author').value    = m.author||'';
+  document.getElementById('memo-content').value   = m.content||'';
+  document.getElementById('memo-patient').value   = m.patientId||'';
+  document.getElementById('memo-caregiver').value = m.caregiverId||'';
+  document.getElementById('memo-delete-btn').style.display = 'inline-flex';
+}
+
+function saveMemoEntry() {
+  const date        = document.getElementById('memo-date').value;
+  const author      = document.getElementById('memo-author').value.trim();
+  const content     = document.getElementById('memo-content').value.trim();
+  const patientId   = document.getElementById('memo-patient').value;
+  const caregiverId = document.getElementById('memo-caregiver').value;
+  if(!content) { toast('내용을 입력해주세요', true); return; }
+  if(editMemoId) {
+    const m = memos.find(x=>String(x.id)===String(editMemoId));
+    if(m) Object.assign(m, {date,author,content,patientId,caregiverId,updatedAt:todayStr()});
+  } else {
+    memos.unshift({ id:Date.now()+Math.random(), date, author, content, patientId, caregiverId, createdAt:todayStr() });
+  }
+  save(); renderMemo();
+  document.getElementById('memo-editor').style.display = 'none';
+  toast(`✅ 업무일지 ${editMemoId?'수정':'저장'}됐어요`);
+  editMemoId = null;
+}
+
+function deleteMemoEntry() {
+  if(!editMemoId || !confirm('이 일지를 삭제할까요?')) return;
+  memos = memos.filter(m=>String(m.id)!==String(editMemoId));
+  save(); renderMemo();
+  document.getElementById('memo-editor').style.display = 'none';
+  editMemoId = null;
+  toast('삭제됐어요');
+}
+
+function loadQuickMemo() {
+  const ptId = document.getElementById('quick-memo-pt').value;
+  const pt = patients.find(p=>String(p.id)===String(ptId));
+  document.getElementById('quick-memo-content').value = pt ? (pt.memo||'') : '';
+}
+
+function saveQuickMemo() {
+  const ptId = document.getElementById('quick-memo-pt').value;
+  if(!ptId) { toast('환자를 선택해주세요', true); return; }
+  const pt = patients.find(p=>String(p.id)===String(ptId));
+  if(!pt) return;
+  pt.memo = document.getElementById('quick-memo-content').value.trim();
+  save();
+  toast(`✅ ${pt.name} 메모 저장됐어요`);
+}
+
+function initMemoPage() {
+  const monthEl = document.getElementById('memo-month');
+  if(monthEl && !monthEl.value) {
+    const now = new Date();
+    monthEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  const ptSel = document.getElementById('quick-memo-pt');
+  if(ptSel) {
+    ptSel.innerHTML = '<option value="">— 환자 선택 —</option>' +
+      patients.map(p=>`<option value="${p.id}">${p.name} (${p.hospital||''})</option>`).join('');
+  }
+  renderMemo();
+}
+
 // 규칙:
 // - 8일 이상: 시작일+8일 다음날이 첫 주급일, 이후 매주 같은 요일
 // - 7일 이하: 마감일 당일 지급 (주말이면 전 금요일 예약이체)
