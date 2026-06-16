@@ -953,6 +953,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="fixEarlyEndData()">
         🔧 중도종료 데이터 복구
       </button>
+      <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="checkPayRemind(true)">
+        💰 급여 알림 테스트
+      </button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <label class="btn" style="cursor:pointer">
@@ -1174,7 +1177,7 @@ function doPost(e) {
 <div id="remind-popup">
   <h4>⏰ 알림</h4>
   <div id="remind-popup-body" style="font-size:13px;opacity:.95;line-height:1.6;white-space:pre-wrap"></div>
-  <button class="remind-close" onclick="document.getElementById('remind-popup').style.display='none'">확인</button>
+  <button class="remind-close" onclick="closeRemindPopup()">확인</button>
 </div>
 <audio id="remind-audio" src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA..." preload="auto"></audio>
 
@@ -2830,7 +2833,6 @@ function saveCg() {
     copyBtn.textContent = '📋 교체보고 복사';
     copyBtn.onclick = () => { doCopy(replaceMsg); toast('✅ 교체보고 복사됐어요!'); };
     if(cfg.sound !== false) playBeep();
-    setTimeout(()=>{ popup.style.display='none'; }, 20000);
     toast(`✅ 간병인 등록 완료! 교체보고가 자동 작성됐어요.`);
   } // isReplace 블록 끝
   else {
@@ -3991,26 +3993,24 @@ function calcPayDates(cg) {
     if(pt && pt.duration) totalDays = parseDurationDays(pt.duration);
   }
 
-  if(totalDays !== null && totalDays <= 7) {
-    // 7일 이하: 마감일 당일 지급
-    const payDate = parseLocalDate(cg.endDate || toLocalDateStr(new Date(start.getTime() + totalDays*86400000)));
+  if(totalDays !== null && totalDays <= 6) {
+    // 6일 이하 단기: 마감일 당일 지급
+    const payDate = parseLocalDate(cg.endDate);
     if(!payDate) return [];
-    const dow = payDate.getDay(); // 0=일, 6=토
+    const dow = payDate.getDay();
     if(dow === 0 || dow === 6) {
-      // 주말 → 전 금요일
+      // 주말 → 전 금요일 예약이체
       const fri = new Date(payDate);
       fri.setDate(fri.getDate() - (dow === 6 ? 1 : 2));
-      results.push({ date: toLocalDateStr(fri), label: '1주 이내 급여', isReserve: true, endDate: toLocalDateStr(payDate) });
+      results.push({ date: toLocalDateStr(fri), label: '단기 급여', isReserve: true, endDate: toLocalDateStr(payDate) });
     } else {
-      results.push({ date: toLocalDateStr(payDate), label: '1주 이내 급여', isReserve: false, endDate: toLocalDateStr(payDate) });
+      results.push({ date: toLocalDateStr(payDate), label: '단기 급여', isReserve: false, endDate: toLocalDateStr(payDate) });
     }
   } else {
-    // 8일 이상: 주급 계산
-    // 1주차 근무 마감: 시작일 + 7일 (8일째)
-    // 첫 주급 지급일: 시작일 + 8일 (9일째, 마감 다음날)
+    // 7일 이상: 시작일 + 7일부터 매주 같은 요일 지급
+    // 예: 6/8(월) 시작 → 6/15(월) 첫 주급, 6/22(월) 2주차...
     const firstPay = new Date(start);
-    firstPay.setDate(firstPay.getDate() + 8);
-    const payDow = firstPay.getDay(); // 첫 주급 요일 고정
+    firstPay.setDate(firstPay.getDate() + 7);
 
     const endDate = cg.endDate ? parseLocalDate(cg.endDate) : null;
     const maxDate = endDate || new Date(start.getTime() + 26*7*86400000);
@@ -4035,21 +4035,42 @@ function calcPayDates(cg) {
   return results;
 }
 
-function checkPayRemind() {
+function closeRemindPopup() {
+  document.getElementById('remind-popup').style.display = 'none';
+}
+
+function confirmPayRemind() {
+  localStorage.setItem('cnc_payRemindConfirmed', todayStr());
+  document.getElementById('remind-popup').style.display = 'none';
+}
+
+function checkPayRemind(testMode) {
   const today = todayStr();
+
+  // 테스트 모드 아닐 때: 오늘 이미 확인(닫기)한 경우 스킵
+  if(!testMode) {
+    const confirmed = localStorage.getItem('cnc_payRemindConfirmed');
+    if(confirmed === today) return;
+  }
+
   const alerts = [];
 
-  caregivers.filter(c => c.workStatus === '근무중' && c.startDate).forEach(cg => {
+  caregivers.filter(c => c.startDate && (c.workStatus === '근무중' || c.workStatus === '종료')).forEach(cg => {
     const payDates = calcPayDates(cg);
     payDates.forEach(p => {
-      if(p.date === today) {
-        const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
-        const ptName = pt ? pt.name : '';
-        if(p.isReserve) {
-          alerts.push(`💰 <b>${cg.name}</b> ${p.label} <span style="color:var(--amber)">[예약이체]</span> (${p.payDate||p.endDate} 마감)`);
-        } else {
-          alerts.push(`💰 <b>${cg.name}</b> ${p.label} 지급일${ptName?' ('+ptName+')':''}`);
-        }
+      const isToday = p.date === today;
+      const isFuture = testMode && p.date > today;
+      if(!isToday && !isFuture) return;
+
+      const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
+      const ptName = pt ? pt.name : '';
+      const prefix = !isToday ? `📅 ${p.date} ` : '';
+      const endedTag = cg.workStatus==='종료' ? ' <span style="opacity:.6">(종료)</span>' : '';
+
+      if(p.isReserve) {
+        alerts.push(`${prefix}💰 <b>${cg.name}</b>${endedTag} ${p.label} <span style="color:var(--amber)">[예약이체]</span> (${p.payDate||p.endDate} 마감)`);
+      } else {
+        alerts.push(`${prefix}💰 <b>${cg.name}</b>${endedTag} ${p.label} 지급일${ptName?' ('+ptName+')':''}`);
       }
     });
   });
@@ -4057,11 +4078,12 @@ function checkPayRemind() {
   if(alerts.length > 0) {
     const popup = document.getElementById('remind-popup');
     document.getElementById('remind-popup-body').innerHTML =
-      `💰 <b>급여 지급 알림</b>\n\n` +
+      `💰 <b>${testMode?'급여 일정 미리보기':'급여 지급 알림'}</b>\n\n` +
       alerts.map(a=>`<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.15)">${a}</div>`).join('');
     popup.style.display = 'block';
-    if(cfg.sound !== false) playBeep();
-    setTimeout(()=>{ popup.style.display='none'; }, 20000);
+    if(!testMode && cfg.sound !== false) playBeep();
+  } else if(testMode) {
+    toast('오늘 이후 예정된 급여 지급일이 없어요');
   }
 }
 
@@ -4087,7 +4109,6 @@ function checkDateRemind() {
       alerts.map(a=>`<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.15)">${a}</div>`).join('');
     popup.style.display = 'block';
     if(cfg.sound !== false) playBeep();
-    setTimeout(()=>{ popup.style.display='none'; }, 15000);
   }
 }
 
@@ -4719,8 +4740,7 @@ function checkAutoEnd() {
       copyBtn.onclick = () => { doCopy(msgs); toast('✅ 종료보고 복사됐어요!'); };
 
       if(cfg.sound !== false) playBeep();
-      setTimeout(()=>{ popup.style.display='none'; }, 20000);
-    }
+      }
   }
 
   if(changed) {
@@ -4745,7 +4765,6 @@ function fireRemind() {
   if(Notification.permission==='granted'){
     new Notification('씨앤에이케어 리마인드',{body:`미구인 ${unrecruited.length}건 — ${names}`});
   }
-  setTimeout(()=>{popup.style.display='none';},12000);
 }
 
 function checkInsuranceExpiry() {
@@ -4773,7 +4792,6 @@ function checkInsuranceExpiry() {
   if(Notification.permission==='granted'){
     new Notification('배상보험 해지 알림',{body:`${names} — 보험 만료 임박`});
   }
-  setTimeout(()=>{popup.style.display='none';},15000);
 }
 
 // 공유 AudioContext (사용자 제스처 후 생성)
