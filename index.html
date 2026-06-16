@@ -488,8 +488,12 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         </div>
         <div class="field"><label>연락처 (보호자)</label><input type="tel" id="p-contact" placeholder="010-0000-0000"></div>
       </div>
-      <div class="field"><label>병원명 + 가까운 전철역 <span class="req">*</span></label>
-        <input type="text" id="p-hospital" placeholder="예: 서울 일원동 삼성병원 / 일원역 5분"></div>
+      <div class="g2">
+        <div class="field"><label>병원명 + 가까운 전철역 <span class="req">*</span></label>
+          <input type="text" id="p-hospital" placeholder="예: 서울 일원동 삼성병원 / 일원역 5분"></div>
+        <div class="field"><label>호실 <span style="font-size:10px;font-weight:400;color:var(--gray)">(내부관리용, 공고 미노출)</span></label>
+          <input type="text" id="p-room" placeholder="예: 153동 33호"></div>
+      </div>
       <div class="field" style="margin-top:.5rem">
         <label>구인 간병인 성별</label>
         <div style="display:flex;gap:8px;margin-top:4px">
@@ -1682,12 +1686,9 @@ function buildPost(p) {
     p.weight ? p.weight+'kg' : ''
   ].filter(Boolean).join(', ');
 
-  // 병원명에서 호실 제거 (예: "서울아산병원 153동 33호" → "서울아산병원")
-  const hospitalOnly = (p.hospital||'—').replace(/\s*\d+동\s*\d+호.*$/,'').replace(/\s*\d+호.*$/,'').trim();
-
   return `🚨[구인]🚨${titleGender}간병인 선생님 구합니다 🙏
 
-🏥 병원위치 : ${hospitalOnly}
+🏥 병원위치 : ${p.hospital || '—'}
 📅 간병시작일 : ${postStartDate || '—'}${days?' ('+days+')':''} ${p.startTime || ''}
 👤 환자분 : ${p.gender||''}${ageWeight?' / '+ageWeight:''} / ${state || '—'}
 💰 가격 : ${pay} / 식사없음
@@ -1724,6 +1725,7 @@ function getFormPatient() {
     gender: document.getElementById('p-gender').value,
     contact: document.getElementById('p-contact').value.trim(),
     hospital: document.getElementById('p-hospital').value.trim(),
+    room: document.getElementById('p-room')?.value.trim() || '',
     diagnosis: document.getElementById('p-diagnosis').value.trim(),
     surgery: document.getElementById('p-surgery').value,
     height: document.getElementById('p-height').value,
@@ -1891,7 +1893,7 @@ function ptRowHTML(p) {
       </div>
     </div>
     <div class="pt-meta">
-      <span>🏥 <b>${p.hospital}</b></span>
+      <span>🏥 <b>${p.hospital}</b>${p.room?` <span style="color:var(--gray);font-weight:400">(${p.room})</span>`:''}</span>
       <span>💊 ${p.diagnosis}</span>
       ${p.recruitHistory && p.recruitHistory.length ? `<span class="badge b-amber" style="font-size:10px">🔄 ${p.recruitHistory.length}차 재모집</span>` : ''}
     </div>
@@ -2091,8 +2093,13 @@ function editPatient(id) {
         <input type="tel" id="ep-contact" value="${p.contact||''}">
       </div>
     </div>
-    <div class="field"><label>병원명 + 가까운 전철역</label>
-      <input type="text" id="ep-hospital" value="${p.hospital||''}">
+    <div class="g2">
+      <div class="field"><label>병원명 + 가까운 전철역</label>
+        <input type="text" id="ep-hospital" value="${p.hospital||''}">
+      </div>
+      <div class="field"><label>호실 <span style="font-size:10px;font-weight:400;color:var(--gray)">(공고 미노출)</span></label>
+        <input type="text" id="ep-room" value="${p.room||''}" placeholder="예: 153동 33호">
+      </div>
     </div>
     <div class="hr"></div>
     <div class="card-hd" style="margin-bottom:.75rem"><span class="dot"></span>환자 상태</div>
@@ -2199,6 +2206,7 @@ function savePatientEdit(id) {
   p.gender    = document.getElementById('ep-gender').value;
   p.contact   = document.getElementById('ep-contact').value.trim();
   p.hospital  = document.getElementById('ep-hospital').value.trim();
+  p.room      = document.getElementById('ep-room')?.value.trim() || '';
   p.diagnosis = document.getElementById('ep-diagnosis').value.trim();
   p.surgery   = document.getElementById('ep-surgery').value;
   p.cgGender  = document.querySelector('input[name="ep-cg-gender"]:checked')?.value || '';
