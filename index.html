@@ -844,50 +844,28 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
 <!-- ══ CALENDAR ══ -->
 <div class="page" id="page-calendar">
-  <!-- 툴팁 -->
-  <div class="cal-tooltip" id="cal-tooltip"></div>
   <div class="sh">
-    <div><div class="sh-title">📅 캘린더</div><div class="sh-sub">환자·간병인 스케줄 및 급여 지급일</div></div>
+    <div><div class="sh-title">📅 일정 조회</div><div class="sh-sub">날짜별 환자·간병인 스케줄 및 급여 지급일</div></div>
     <div style="display:flex;align-items:center;gap:8px">
-      <button class="btn btn-sm" onclick="shiftCalMonth(-1)" style="padding:6px 12px;font-size:16px">‹</button>
-      <span id="cal-title" style="font-size:16px;font-weight:900;min-width:100px;text-align:center"></span>
-      <button class="btn btn-sm" onclick="shiftCalMonth(1)" style="padding:6px 12px;font-size:16px">›</button>
+      <button class="btn btn-sm" onclick="shiftCalDay(-1)" style="padding:6px 12px;font-size:16px">‹</button>
+      <input type="date" id="cal-date-input" style="font-size:14px;font-weight:700;padding:6px 10px;border:1.5px solid var(--border);border-radius:var(--rsm);background:var(--surface)" onchange="renderCalendar()">
+      <button class="btn btn-sm" onclick="shiftCalDay(1)" style="padding:6px 12px;font-size:16px">›</button>
       <button class="btn btn-sm btn-teal" onclick="goCalToday()">오늘</button>
     </div>
   </div>
 
-  <!-- 범례 -->
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:.875rem;font-size:11px;font-weight:600">
-    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#E5F3F1;display:inline-block"></span>간병 시작</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#FCEAEA;display:inline-block"></span>간병 마감</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#FDF3E3;display:inline-block"></span>주급 지급</span>
-    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#FFF3E0;display:inline-block"></span>예약이체</span>
+  <!-- 요일/날짜 큰 표시 -->
+  <div id="cal-day-header" style="text-align:center;margin-bottom:1.25rem">
+    <div id="cal-day-label" style="font-size:13px;font-weight:600;color:var(--gray);letter-spacing:.5px"></div>
+    <div id="cal-day-num" style="font-size:48px;font-weight:900;line-height:1.1;color:var(--black)"></div>
+    <div id="cal-month-label" style="font-size:14px;color:var(--gray);margin-top:2px"></div>
   </div>
 
-  <!-- 달력 -->
-  <div class="cal-wrap">
-    <!-- 요일 헤더 -->
-    <div class="cal-weekdays">
-      <div class="cal-weekday sun">SUN</div>
-      <div class="cal-weekday">MON</div>
-      <div class="cal-weekday">TUE</div>
-      <div class="cal-weekday">WED</div>
-      <div class="cal-weekday">THU</div>
-      <div class="cal-weekday">FRI</div>
-      <div class="cal-weekday sat">SAT</div>
-    </div>
-    <!-- 날짜 그리드 -->
-    <div class="cal-body" id="cal-body"></div>
-  </div>
-
-  <!-- 날짜 클릭 상세 -->
-  <div id="cal-detail" style="display:none;margin-top:1rem">
+  <!-- 당일 일정 -->
+  <div id="cal-day-body">
     <div class="card">
-      <div class="card-hd" style="justify-content:space-between">
-        <div><span class="dot"></span><span id="cal-detail-date"></span></div>
-        <button class="btn btn-sm" onclick="document.getElementById('cal-detail').style.display='none'">✕</button>
-      </div>
-      <div id="cal-detail-body"></div>
+      <div class="card-hd"><span class="dot"></span>이날 일정</div>
+      <div id="cal-detail-body" style="min-height:80px"></div>
     </div>
   </div>
 </div>
@@ -4240,212 +4218,123 @@ function calcTotalPay(cg) {
 let _calYear  = new Date().getFullYear();
 let _calMonth = new Date().getMonth(); // 0-indexed
 
-function showCalTip(e, el) {
-  const tip = document.getElementById('cal-tooltip');
-  if(!tip) return;
-  tip.textContent = el.dataset.tip || '';
-  tip.classList.add('show');
-  const rect = el.getBoundingClientRect();
-  let left = rect.left;
-  let top  = rect.bottom + 6;
-  if(left + 200 > window.innerWidth) left = window.innerWidth - 210;
-  if(top + 80 > window.innerHeight) top = rect.top - 80;
-  tip.style.left = left + 'px';
-  tip.style.top  = top  + 'px';
-}
-
-function hideCalTip() {
-  const tip = document.getElementById('cal-tooltip');
-  if(tip) tip.classList.remove('show');
-}
-
 function initCalendar() {
+  var inp = document.getElementById('cal-date-input');
+  if(inp && !inp.value) inp.value = todayStr();
   renderCalendar();
 }
 
-function shiftCalMonth(delta) {
-  _calMonth += delta;
-  if(_calMonth > 11) { _calMonth = 0;  _calYear++; }
-  if(_calMonth < 0)  { _calMonth = 11; _calYear--; }
+function shiftCalDay(delta) {
+  var inp = document.getElementById('cal-date-input');
+  if(!inp) return;
+  var d = parseLocalDate(inp.value || todayStr());
+  if(!d) return;
+  d.setDate(d.getDate() + delta);
+  inp.value = toLocalDateStr(d);
   renderCalendar();
 }
 
 function goCalToday() {
-  _calYear  = new Date().getFullYear();
-  _calMonth = new Date().getMonth();
+  var inp = document.getElementById('cal-date-input');
+  if(inp) inp.value = todayStr();
   renderCalendar();
 }
 
 function renderCalendar() {
-  var today = todayStr();
-  var titleEl = document.getElementById('cal-title');
-  var bodyEl  = document.getElementById('cal-body');
-  if(!titleEl || !bodyEl) return;
+  var inp = document.getElementById('cal-date-input');
+  var dateStr = (inp && inp.value) ? inp.value : todayStr();
+  if(inp && !inp.value) inp.value = dateStr;
 
-  titleEl.textContent = _calYear + '년 ' + (_calMonth+1) + '월';
+  var DAYS = ['일','월','화','수','목','금','토'];
+  var MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  var d = parseLocalDate(dateStr);
+  var isToday = dateStr === todayStr();
 
-  // 이벤트 수집
-  var events = {};
-  function addEv(ds, type, label, tip) {
-    if(!ds) return;
-    if(!events[ds]) events[ds] = [];
-    events[ds].push({ type:type, label:label, tip:(tip||label) });
+  // 헤더 표시
+  var dayLabel = document.getElementById('cal-day-label');
+  var dayNum   = document.getElementById('cal-day-num');
+  var monthLabel = document.getElementById('cal-month-label');
+  if(d) {
+    var dow = d.getDay();
+    var dowLabel = DAYS[dow] + '요일';
+    if(dayLabel) dayLabel.textContent = dowLabel;
+    if(dayNum) {
+      dayNum.textContent = d.getDate();
+      dayNum.style.color = isToday ? 'var(--teal)' : (dow===0?'var(--red)':dow===6?'var(--blue)':'var(--black)');
+    }
+    if(monthLabel) monthLabel.textContent = d.getFullYear() + '년 ' + MONTHS[d.getMonth()];
   }
 
-  // 환자 시작/마감
+  // 당일 이벤트 수집
+  showCalDetail(dateStr);
+}
+
+function showCalDetail(dateStr) {
+  var bodyEl = document.getElementById('cal-detail-body');
+  if(!bodyEl) return;
+
+  var parts = [];
+
+  // 환자 시작일
   patients.forEach(function(p) {
     var cg = caregivers.find(function(c){ return String(c.patientId)===String(p.id); });
-    var cgName = cg ? cg.name : (p.caregiverName||'');
-    var tip1 = p.name + (p.hospital?'\n'+p.hospital:'') + (cgName?'\n간병인: '+cgName:'') + (p.startTime?'\n'+p.startTime:'');
-    if(p.startDate) addEv(p.startDate, 'start', '▶ '+p.name, tip1);
+    var cgStr = cg ? ' / 간병인: ' + cg.name : '';
+    if(p.startDate === dateStr) {
+      parts.push('<div style="padding:10px 12px;border-left:3px solid var(--teal);margin-bottom:8px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--teal);margin-bottom:3px">▶ 간병 시작</div>'
+        + '<div style="font-size:14px;font-weight:700">' + p.name + '</div>'
+        + '<div style="font-size:12px;color:var(--gray);margin-top:2px">' + (p.hospital||'') + (p.room?' ('+p.room+')':'') + cgStr + '</div>'
+        + '<div style="font-size:11px;color:var(--gray);margin-top:2px">' + (p.startTime||'') + (p.duration?' · '+p.duration:'') + '</div>'
+        + '</div>');
+    }
+    // 마감일
     var endDate = p.endDate;
     if(!endDate && p.startDate && p.duration) {
       var days = parseDurationDays(p.duration);
-      if(days) { var dd = parseLocalDate(p.startDate); if(dd){ dd.setDate(dd.getDate()+days); endDate = toLocalDateStr(dd); } }
+      if(days) { var dd=parseLocalDate(p.startDate); if(dd){dd.setDate(dd.getDate()+days);endDate=toLocalDateStr(dd);} }
     }
-    if(endDate) {
-      var tip2 = p.name + (p.hospital?'\n'+p.hospital:'') + (cgName?'\n간병인: '+cgName:'') + (!p.endDate?'\n(예상마감)':'');
-      addEv(endDate, 'end', '■ '+p.name+(!p.endDate?'(예상)':''), tip2);
+    if(endDate === dateStr) {
+      parts.push('<div style="padding:10px 12px;border-left:3px solid var(--red);margin-bottom:8px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:3px">■ 간병 마감' + (!p.endDate?' (예상)':'') + '</div>'
+        + '<div style="font-size:14px;font-weight:700">' + p.name + '</div>'
+        + '<div style="font-size:12px;color:var(--gray);margin-top:2px">' + (p.hospital||'') + cgStr + '</div>'
+        + '<div style="font-size:11px;color:var(--gray);margin-top:2px">' + (p.endTime||'') + '</div>'
+        + '</div>');
     }
   });
 
   // 간병인 시작/마감
   caregivers.forEach(function(c) {
-    var pt = c.patientId ? patients.find(function(p){ return String(p.id)===String(c.patientId); }) : null;
-    var tip = c.name + (pt?'\n'+pt.name:'') + (pt&&pt.hospital?'\n'+pt.hospital:'');
-    if(c.startDate) addEv(c.startDate, 'start', '▶ '+c.name+'(간)', tip);
-    if(c.endDate)   addEv(c.endDate,   'end',   '■ '+c.name+'(간)', tip);
-  });
-
-  // 급여 지급일
-  caregivers.filter(function(c){ return !!c.startDate; }).forEach(function(cg) {
-    calcPayDates(cg).forEach(function(p) {
-      var tip = cg.name + '\n' + p.label + (p.isReserve?'\n[예약이체]':'');
-      if(p.isReserve) addEv(p.date, 'pay-reserve', '💰 '+cg.name+' '+p.label+'[예약]', tip);
-      else            addEv(p.date, 'pay',          '💰 '+cg.name+' '+p.label, tip);
-    });
-  });
-
-  // 달력 그리기
-  var firstDay = new Date(_calYear, _calMonth, 1).getDay();
-  var lastDate = new Date(_calYear, _calMonth+1, 0).getDate();
-  var prevLast = new Date(_calYear, _calMonth, 0).getDate();
-  var totalCells = Math.ceil((firstDay + lastDate) / 7) * 7;
-  var html = '';
-
-  for(var i = 0; i < totalCells; i++) {
-    var date, isThisMonth = true;
-    if(i < firstDay) {
-      date = prevLast - firstDay + i + 1; isThisMonth = false;
-    } else if(i >= firstDay + lastDate) {
-      date = i - firstDay - lastDate + 1; isThisMonth = false;
-    } else {
-      date = i - firstDay + 1;
-    }
-
-    var mm  = String(_calMonth+1).padStart(2,'0');
-    var dd  = String(date).padStart(2,'0');
-    var dateStr = isThisMonth ? (_calYear+'-'+mm+'-'+dd) : '';
-    var isToday = dateStr === today;
-    var dow = i % 7;
-    var classes = 'cal-cell';
-    if(!isThisMonth) classes += ' other-month';
-    if(isToday)      classes += ' today';
-    if(dow===0)      classes += ' sun-col';
-    if(dow===6)      classes += ' sat-col';
-
-    var evList = (dateStr && events[dateStr]) || [];
-    var evHtml = '';
-    var limit = Math.min(evList.length, 3);
-    for(var k=0; k<limit; k++) {
-      var ev = evList[k];
-      var safeTip = ev.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;');
-      evHtml += '<div class="cal-event ' + ev.type + '" data-tip="' + safeTip + '" onmouseenter="showCalTip(event,this)" onmouseleave="hideCalTip()">' + ev.label + '</div>';
-    }
-    if(evList.length > 3) {
-      evHtml += '<span class="cal-more" onclick="event.stopPropagation();showCalDetail(\'' + dateStr + '\')">' + (evList.length-3) + '개 더</span>';
-    }
-
-    var onclick = dateStr ? ' onclick="showCalDetail(\'' + dateStr + '\')"' : '';
-    var style   = !dateStr ? ' style="cursor:default"' : '';
-    html += '<div class="' + classes + '"' + onclick + style + '>';
-    html += '<div class="cal-date-row"><div class="cal-date">' + date + '</div></div>';
-    html += '<div class="cal-events">' + evHtml + '</div>';
-    html += '</div>';
-  }
-
-  bodyEl.innerHTML = html;
-}
-
-function showCalDetail(dateStr) {
-  const detailEl = document.getElementById('cal-detail');
-  const dateEl   = document.getElementById('cal-detail-date');
-  const bodyEl   = document.getElementById('cal-detail-body');
-  if(!detailEl || !dateEl || !bodyEl) return;
-
-  const DAYS = ['일','월','화','수','목','금','토'];
-  const d = parseLocalDate(dateStr);
-  const dayStr = d ? '(' + DAYS[d.getDay()] + '요일)' : '';
-  dateEl.textContent = dateStr + ' ' + dayStr;
-
-  const parts = [];
-
-  // 환자 이벤트
-  patients.forEach(p => {
-    const cg = caregivers.find(c=>String(c.patientId)===String(p.id));
-    const cgStr = cg ? ' / 간병인: ' + cg.name : '';
-    if(p.startDate === dateStr) {
-      parts.push('<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
-        + '<div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병 시작</div>'
-        + '<div style="font-size:13px;font-weight:700">' + p.name + ' (' + (p.hospital||'') + ')</div>'
-        + '<div style="font-size:11px;color:var(--gray)">' + (p.startTime||'') + (p.duration?' · '+p.duration:'') + cgStr + '</div>'
-        + '</div>');
-    }
-    let endDate = p.endDate;
-    if(!endDate && p.startDate && p.duration) {
-      const days = parseDurationDays(p.duration);
-      if(days) {
-        const dd = parseLocalDate(p.startDate);
-        if(dd) { dd.setDate(dd.getDate()+days); endDate = toLocalDateStr(dd); }
-      }
-    }
-    if(endDate === dateStr) {
-      parts.push('<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
-        + '<div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병 마감' + (!p.endDate?' (예상)':'') + '</div>'
-        + '<div style="font-size:13px;font-weight:700">' + p.name + ' (' + (p.hospital||'') + ')</div>'
-        + '<div style="font-size:11px;color:var(--gray)">' + (p.endTime||'') + cgStr + '</div>'
-        + '</div>');
-    }
-  });
-
-  // 간병인 이벤트
-  caregivers.forEach(c => {
+    var pt = c.patientId ? patients.find(function(p){return String(p.id)===String(c.patientId);}) : null;
+    var ptStr = pt ? ' (' + pt.name + ')' : '';
     if(c.startDate === dateStr) {
-      parts.push('<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
-        + '<div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병인 시작</div>'
-        + '<div style="font-size:13px;font-weight:700">' + c.name + '</div>'
-        + '<div style="font-size:11px;color:var(--gray)">' + (c.startTime||'') + '</div>'
+      parts.push('<div style="padding:10px 12px;border-left:3px solid var(--teal);margin-bottom:8px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--teal);margin-bottom:3px">▶ 간병인 근무 시작</div>'
+        + '<div style="font-size:14px;font-weight:700">' + c.name + ptStr + '</div>'
+        + '<div style="font-size:11px;color:var(--gray);margin-top:2px">' + (c.startTime||'') + '</div>'
         + '</div>');
     }
     if(c.endDate === dateStr) {
-      parts.push('<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
-        + '<div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병인 마감</div>'
-        + '<div style="font-size:13px;font-weight:700">' + c.name + '</div>'
-        + '<div style="font-size:11px;color:var(--gray)">' + (c.endTime||'') + '</div>'
+      parts.push('<div style="padding:10px 12px;border-left:3px solid var(--red);margin-bottom:8px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:3px">■ 간병인 근무 마감</div>'
+        + '<div style="font-size:14px;font-weight:700">' + c.name + ptStr + '</div>'
+        + '<div style="font-size:11px;color:var(--gray);margin-top:2px">' + (c.endTime||'') + '</div>'
         + '</div>');
     }
   });
 
-  // 급여 이벤트
-  caregivers.filter(c=>c.startDate).forEach(cg => {
-    calcPayDates(cg).forEach(p => {
+  // 급여 지급일
+  caregivers.filter(function(c){return !!c.startDate;}).forEach(function(cg) {
+    calcPayDates(cg).forEach(function(p) {
       if(p.date !== dateStr) return;
-      const bgColor = p.isReserve ? '#FFF3E0' : 'var(--amber-lt)';
-      const bdColor = p.isReserve ? '#E65100' : 'var(--amber)';
-      const reserveStr = p.isReserve ? '<div style="font-size:11px;color:var(--gray)">마감일: ' + (p.payDate||p.endDate) + '</div>' : '';
-      parts.push('<div style="padding:8px;border-left:3px solid ' + bdColor + ';margin-bottom:6px;background:' + bgColor + ';border-radius:0 var(--rsm) var(--rsm) 0">'
-        + '<div style="font-size:12px;font-weight:700;color:' + bdColor + '">💰 ' + p.label + (p.isReserve?' [예약이체]':'') + '</div>'
-        + '<div style="font-size:13px;font-weight:700">' + cg.name + '</div>'
+      var bgColor = p.isReserve ? '#FFF3E0' : 'var(--amber-lt)';
+      var bdColor = p.isReserve ? '#E65100' : 'var(--amber)';
+      var pt = cg.patientId ? patients.find(function(pt){return String(pt.id)===String(cg.patientId);}) : null;
+      var ptStr = pt ? ' (' + pt.name + ')' : '';
+      var reserveStr = p.isReserve ? '<div style="font-size:11px;color:var(--gray);margin-top:2px">마감일: ' + (p.payDate||p.endDate) + '</div>' : '';
+      parts.push('<div style="padding:10px 12px;border-left:3px solid ' + bdColor + ';margin-bottom:8px;background:' + bgColor + ';border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:11px;font-weight:700;color:' + bdColor + ';margin-bottom:3px">💰 ' + p.label + (p.isReserve?' [예약이체]':'') + '</div>'
+        + '<div style="font-size:14px;font-weight:700">' + cg.name + ptStr + '</div>'
         + reserveStr
         + '</div>');
     });
@@ -4453,10 +4342,9 @@ function showCalDetail(dateStr) {
 
   bodyEl.innerHTML = parts.length
     ? parts.join('')
-    : '<div style="padding:1rem;text-align:center;color:var(--gray);font-size:13px">이날 일정이 없어요</div>';
-  detailEl.style.display = 'block';
-  detailEl.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    : '<div style="padding:2rem;text-align:center;color:var(--gray);font-size:13px">이날 일정이 없어요 😊</div>';
 }
+
 let editNoticeId = null;
 
 function renderNotices() {
