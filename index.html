@@ -4466,17 +4466,22 @@ function deleteNoticeById(id) {
   toast('삭제됐어요');
 }
 
-// 알림 자동 저장 (공지사항/알림에 자동 기록)
-function saveAutoNotice(content, level='auto') {
+// 알림 자동 저장 (오늘 날짜 중복 제거)
+function saveAutoNotice(content, level) {
+  level = level || 'auto';
+  const today = todayStr();
+  // 오늘 날짜 자동알림 기존 것 모두 제거 (중복 방지)
+  notices = notices.filter(function(n){ return !(n.type==='auto' && n.createdAt===today); });
+  // 새 알림 추가
   notices.unshift({
     id: Date.now()+Math.random(),
     title: '',
-    content,
-    level,
-    createdAt: todayStr(),
+    content: content,
+    level: level,
+    createdAt: today,
     type: 'auto'
   });
-  // 자동 알림은 최대 50개 유지
+  // 최대 50개 유지
   if(notices.length > 50) notices = notices.slice(0, 50);
   save();
 }
@@ -4510,48 +4515,75 @@ function checkAllRemind() {
   patients.filter(p=>p.status!=='종료').forEach(p=>{
     if(p.startDate) {
       const diff = Math.round((parseLocalDate(p.startDate)-new Date().setHours(0,0,0,0))/86400000);
-      if(diff===0) alerts.push(`▶ <b>${p.name}</b> 오늘 간병 시작! (${p.hospital})`);
-      else if(diff===1) alerts.push(`▶ <b>${p.name}</b> 내일 간병 시작 (${p.startDate})`);
+      if(diff===0) alerts.push('▶ '+p.name+' 오늘 간병 시작! ('+p.hospital+')');
+      else if(diff===1) alerts.push('▶ '+p.name+' 내일 간병 시작 ('+p.startDate+')');
     }
     if(p.endDate) {
       const diff = Math.round((parseLocalDate(p.endDate)-new Date().setHours(0,0,0,0))/86400000);
-      if(diff===0) alerts.push(`■ <b>${p.name}</b> 오늘 간병 마감! (${p.hospital})`);
-      else if(diff===1) alerts.push(`■ <b>${p.name}</b> 내일 간병 마감 (${p.endDate})`);
+      if(diff===0) alerts.push('■ '+p.name+' 오늘 간병 마감! ('+p.hospital+')');
+      else if(diff===1) alerts.push('■ '+p.name+' 내일 간병 마감 ('+p.endDate+')');
     }
   });
 
   // ② 급여 지급 알림
-  const confirmed = localStorage.getItem('cnc_payRemindConfirmed');
-  const payDone   = confirmed === today;
-  if(!payDone) {
-    caregivers.filter(c=>c.startDate&&(c.workStatus==='근무중'||c.workStatus==='종료')).forEach(cg=>{
-      calcPayDates(cg).forEach(p=>{
-        if(p.date !== today) return;
-        const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
-        const ptName = pt ? ` (${pt.name})` : '';
-        if(p.isReserve) alerts.push(`💰 <b>${cg.name}</b> ${p.label} <span style="color:var(--amber)">[예약이체]</span> (${p.payDate||p.endDate} 마감)`);
-        else alerts.push(`💰 <b>${cg.name}</b> ${p.label} 지급일${ptName}`);
-      });
+  caregivers.filter(c=>c.startDate&&(c.workStatus==='근무중'||c.workStatus==='종료')).forEach(cg=>{
+    calcPayDates(cg).forEach(p=>{
+      if(p.date !== today) return;
+      const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
+      const ptName = pt ? ' ('+pt.name+')' : '';
+      if(p.isReserve) alerts.push('💰 '+cg.name+' '+p.label+' [예약이체] ('+(p.payDate||p.endDate)+' 마감)');
+      else alerts.push('💰 '+cg.name+' '+p.label+' 지급일'+ptName);
     });
+  });
+
+  if(alerts.length === 0) return;
+
+  // 오늘 날짜 + 알림 내용을 합쳐서 키로 사용
+  // → 같은 날 같은 내용이면 스킵, 내용 바뀌면 재알림
+  const alertKey = today + '|' + alerts.join('||');
+  const lastKey  = localStorage.getItem('cnc_remindKey');
+  if(lastKey === alertKey) return; // 같은 날, 같은 내용 → 스킵
+
+  // 새 알림이거나 내용이 바뀐 경우
+  localStorage.setItem('cnc_remindKey', alertKey);
+
+  // 공지사항 중복 방지 - 오늘 동일 내용 자동알림 있으면 저장 안 함
+  const contentStr = alerts.join('\n');
+  const alreadySaved = notices.some(n=>n.type==='auto' && n.createdAt===today && n.content===contentStr);
+  if(!alreadySaved) {
+    saveAutoNotice(contentStr);
   }
 
-  if(alerts.length > 0) {
-    // 공지사항/알림에 자동 저장
-    saveAutoNotice(alerts.map(a=>a.replace(/<[^>]+>/g,'')).join('\n'));
-    // 통합 팝업 표시
-    const popup = document.getElementById('remind-popup');
-    document.getElementById('remind-popup-body').innerHTML =
-      `<div style="font-weight:700;margin-bottom:8px;font-size:14px">📋 오늘의 알림 (${alerts.length}건)</div>` +
-      alerts.map(a=>`<div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.15);line-height:1.6">${a}</div>`).join('');
-    popup.style.display = 'block';
-    if(cfg.sound!==false) playBeep();
-    // 급여 알림 포함 시 확인 처리
-    if(!payDone && alerts.some(a=>a.includes('💰'))) {
-      popup.dataset.hasPay = 'true';
-    } else {
-      popup.dataset.hasPay = '';
+  // 팝업 표시 (HTML용 내용은 별도)
+  const alertsHtml = [];
+  patients.filter(p=>p.status!=='종료').forEach(p=>{
+    if(p.startDate) {
+      const diff = Math.round((parseLocalDate(p.startDate)-new Date().setHours(0,0,0,0))/86400000);
+      if(diff===0) alertsHtml.push('▶ <b>'+p.name+'</b> 오늘 간병 시작! ('+p.hospital+')');
+      else if(diff===1) alertsHtml.push('▶ <b>'+p.name+'</b> 내일 간병 시작 ('+p.startDate+')');
     }
-  }
+    if(p.endDate) {
+      const diff = Math.round((parseLocalDate(p.endDate)-new Date().setHours(0,0,0,0))/86400000);
+      if(diff===0) alertsHtml.push('■ <b>'+p.name+'</b> 오늘 간병 마감! ('+p.hospital+')');
+      else if(diff===1) alertsHtml.push('■ <b>'+p.name+'</b> 내일 간병 마감 ('+p.endDate+')');
+    }
+  });
+  caregivers.filter(c=>c.startDate&&(c.workStatus==='근무중'||c.workStatus==='종료')).forEach(cg=>{
+    calcPayDates(cg).forEach(p=>{
+      if(p.date !== today) return;
+      const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
+      const ptName = pt ? ' (<b>'+pt.name+'</b>)' : '';
+      if(p.isReserve) alertsHtml.push('💰 <b>'+cg.name+'</b> '+p.label+' <span style="color:var(--amber)">[예약이체]</span> ('+(p.payDate||p.endDate)+' 마감)');
+      else alertsHtml.push('💰 <b>'+cg.name+'</b> '+p.label+' 지급일'+ptName);
+    });
+  });
+
+  const popup = document.getElementById('remind-popup');
+  document.getElementById('remind-popup-body').innerHTML =
+    '<div style="font-weight:700;margin-bottom:8px;font-size:14px">📋 오늘의 알림 ('+alertsHtml.length+'건)</div>' +
+    alertsHtml.map(a=>'<div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.15);line-height:1.6">'+a+'</div>').join('');
+  popup.style.display = 'block';
+  if(cfg.sound!==false) playBeep();
 }
 
 // 기존 개별 알림 함수를 통합 함수로 대체
@@ -5277,22 +5309,18 @@ function startRemind() {
   const mins = parseInt(cfg.remindInterval ?? 15);
   if(mins > 0) remindTimer = setInterval(fireRemind, mins * 60 * 1000);
   // 배상보험 체크 1시간마다
+  // 보험 만료 체크 1시간마다
   insuranceTimer = setInterval(checkInsuranceExpiry, 60 * 60 * 1000);
   // 자동 종료 체크 1분마다
   setInterval(checkAutoEnd, 60 * 1000);
-  // 날짜 리마인드 1시간마다
-  setInterval(checkDateRemind, 60 * 60 * 1000);
   // 출퇴근 자동 채우기 1시간마다
   setInterval(autoFillAllAttendance, 60 * 60 * 1000);
-  // 급여 리마인드 1시간마다
-  setInterval(checkPayRemind, 60 * 60 * 1000);
   // 5분마다 자동저장
   setInterval(autoSave, 5 * 60 * 1000);
   // 시작 시 즉시 체크
   setTimeout(checkInsuranceExpiry, 3000);
   setTimeout(checkAutoEnd, 2000);
-  setTimeout(checkDateRemind, 5000);
-  setTimeout(checkPayRemind, 6000); // 앱 시작 시 급여 알림 체크
+  setTimeout(checkAllRemind, 5000);  // 하루 1회 통합 알림 (앱 시작 시)
   setTimeout(autoFillAllAttendance, 7000);
 }
 
