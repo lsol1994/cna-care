@@ -4339,7 +4339,6 @@ function renderCalendar() {
     const isSun = dow === 0, isSat = dow === 6;
 
     const dayEvents = (dateStr && events[dateStr]) || [];
-    const dayEvents = (dateStr && events[dateStr]) || [];
     const evHTML = dayEvents.slice(0,3).map(e =>
       `<div class="cal-event ${e.type}" data-tip="${(e.tooltip||e.label).replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}" onmouseenter="showCalTip(event,this)" onmouseleave="hideCalTip()">${e.label}</div>`
     ).join('');
