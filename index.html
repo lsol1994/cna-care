@@ -915,7 +915,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
           <div><span class="dot" style="background:var(--amber)"></span>📢 공지사항 / 알림</div>
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:11px;color:var(--gray)" id="notice-count"></span>
-            <input type="month" id="notice-month" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)" onchange="renderNotices()">
+            <input type="date" id="notice-date" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)" onchange="renderNotices()">
+            <button class="btn btn-sm" onclick="document.getElementById('notice-date').value='';renderNotices()" style="font-size:10px;padding:3px 7px">전체</button>
           </div>
         </div>
         <div id="notice-list"></div>
@@ -2037,6 +2038,7 @@ function ptRowHTML(p) {
       <span>💊 ${p.diagnosis}</span>
       ${p.recruitHistory && p.recruitHistory.length ? `<span class="badge b-amber" style="font-size:10px">🔄 ${p.recruitHistory.length}차 재모집</span>` : ''}
     </div>
+    ${p.memo ? `<div style="font-size:11px;color:var(--teal);background:var(--teal-lt);border-radius:var(--rsm);padding:5px 10px;margin-bottom:6px;white-space:pre-wrap;line-height:1.5">📝 ${p.memo}</div>` : ''}
     <!-- 시작일/마감일 한눈에 -->
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:.5rem;flex-wrap:wrap;font-size:12px">
       <span style="color:var(--teal);font-weight:700">▶ ${p.startDate||'—'} ${p.startTime||''}</span>
@@ -2205,7 +2207,11 @@ function openPatient(id) {
       <button class="btn btn-sm" onclick="openCaregiverModal('${p.id}')">간병인 등록</button>
       <button class="btn btn-sm" onclick="doCopy(patients.find(x=>String(x.id)==='${p.id}')?._editedPost || buildPost(patients.find(x=>String(x.id)==='${p.id}')));closeOverlay('pt-overlay')">공고 복사</button>
       <button class="btn btn-red btn-sm" onclick="deletePatient('${p.id}')">환자 삭제</button>
-    </div>`;
+    </div>
+    <div class="hr"></div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--teal);margin-bottom:6px">📝 메모</div>
+    <textarea id="pt-memo-area" rows="3" placeholder="이 환자에 대한 메모를 남겨주세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans);margin-bottom:6px">${p.memo||''}</textarea>
+    <button class="btn btn-teal btn-sm" onclick="savePtMemoFromModal('${p.id}')">메모 저장</button>`;
   document.getElementById('pt-overlay').classList.add('open');
 }
 
@@ -3131,6 +3137,7 @@ function renderCaregivers() {
           return total ? `<span style="color:var(--teal);font-weight:700">💵 총 ${total}</span>` : '';
         })()}
       </div>
+      ${cg.memo ? `<div style="font-size:11px;color:var(--teal);background:var(--teal-lt);border-radius:var(--rsm);padding:5px 10px;margin-bottom:6px;white-space:pre-wrap;line-height:1.5">📝 ${cg.memo}</div>` : ''}
       ${(()=>{
         const pt = cg.patientId ? patients.find(p=>String(p.id)===String(cg.patientId)) : null;
         if(pt) return `
@@ -3201,11 +3208,34 @@ function openCgDetail(id) {
       ${cg.patientId&&cg.workStatus==='근무중'?`<button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="closeOverlay('cg-overlay');openEarlyTerminate('${cg.id}')">중도종료</button>`:''}
       ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
       <button class="btn btn-red btn-sm" onclick="deleteCg('${cg.id}')">삭제</button>
-    </div>`;
+    </div>
+    <div class="hr"></div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--teal);margin-bottom:6px">📝 메모</div>
+    <textarea id="cg-memo-area" rows="3" placeholder="이 간병인에 대한 메모를 남겨주세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans);margin-bottom:6px">${cg.memo||''}</textarea>
+    <button class="btn btn-teal btn-sm" onclick="saveCgMemoFromModal('${cg.id}')">메모 저장</button>`;
   document.getElementById('cg-overlay').classList.add('open');
 }
 
-// ─── 중도 종료 ───
+// ─── 모달에서 메모 저장 ───
+function savePtMemoFromModal(ptId) {
+  const pt = patients.find(p=>String(p.id)===String(ptId));
+  if(!pt) return;
+  const area = document.getElementById('pt-memo-area');
+  if(!area) return;
+  pt.memo = area.value.trim();
+  save();
+  toast('✅ ' + pt.name + ' 메모 저장됐어요');
+}
+
+function saveCgMemoFromModal(cgId) {
+  const cg = caregivers.find(c=>String(c.id)===String(cgId));
+  if(!cg) return;
+  const area = document.getElementById('cg-memo-area');
+  if(!area) return;
+  cg.memo = area.value.trim();
+  save();
+  toast('✅ ' + cg.name + ' 메모 저장됐어요');
+}
 function openEarlyTerminate(cgId) {
   const cg = caregivers.find(c=>String(c.id)===String(cgId));
   if(!cg) return;
@@ -4247,120 +4277,101 @@ function goCalToday() {
 }
 
 function renderCalendar() {
-  const DAYS = ['일','월','화','수','목','금','토'];
-  const today = todayStr();
-  const titleEl = document.getElementById('cal-title');
-  const bodyEl  = document.getElementById('cal-body');
+  var today = todayStr();
+  var titleEl = document.getElementById('cal-title');
+  var bodyEl  = document.getElementById('cal-body');
   if(!titleEl || !bodyEl) return;
 
-  titleEl.textContent = `${_calYear}년 ${_calMonth+1}월`;
+  titleEl.textContent = _calYear + '년 ' + (_calMonth+1) + '월';
 
-  // 이번 달 이벤트 수집
-  const events = {}; // { 'YYYY-MM-DD': [{type, label, color}] }
-
-  function addEvent(dateStr, type, label, tooltip='') {
-    if(!dateStr) return;
-    if(!events[dateStr]) events[dateStr] = [];
-    events[dateStr].push({ type, label, tooltip });
+  // 이벤트 수집
+  var events = {};
+  function addEv(ds, type, label, tip) {
+    if(!ds) return;
+    if(!events[ds]) events[ds] = [];
+    events[ds].push({ type:type, label:label, tip:(tip||label) });
   }
 
-  // ① 환자 시작일/마감일 (간병인 이름 포함)
-  patients.forEach(p => {
-    const cg = caregivers.find(c=>String(c.patientId)===String(p.id));
-    const cgName = cg ? cg.name : (p.caregiverName||'');
-    const tooltip = [
-      p.name,
-      p.hospital||'',
-      cgName ? `간병인: ${cgName}` : '',
-      p.startTime||''
-    ].filter(Boolean).join('\n');
-
-    if(p.startDate) addEvent(p.startDate, 'start', `▶ ${p.name}`, tooltip);
-
-    const endDate = p.endDate || (()=>{
-      if(!p.startDate||!p.duration) return '';
-      const days=parseDurationDays(p.duration); if(!days) return '';
-      const d=parseLocalDate(p.startDate); if(!d) return '';
-      d.setDate(d.getDate()+days); return toLocalDateStr(d);
-    })();
+  // 환자 시작/마감
+  patients.forEach(function(p) {
+    var cg = caregivers.find(function(c){ return String(c.patientId)===String(p.id); });
+    var cgName = cg ? cg.name : (p.caregiverName||'');
+    var tip1 = p.name + (p.hospital?'\n'+p.hospital:'') + (cgName?'\n간병인: '+cgName:'') + (p.startTime?'\n'+p.startTime:'');
+    if(p.startDate) addEv(p.startDate, 'start', '▶ '+p.name, tip1);
+    var endDate = p.endDate;
+    if(!endDate && p.startDate && p.duration) {
+      var days = parseDurationDays(p.duration);
+      if(days) { var dd = parseLocalDate(p.startDate); if(dd){ dd.setDate(dd.getDate()+days); endDate = toLocalDateStr(dd); } }
+    }
     if(endDate) {
-      const endTooltip = [
-        p.name,
-        p.hospital||'',
-        cgName ? `간병인: ${cgName}` : '',
-        !p.endDate?'(예상마감)':''
-      ].filter(Boolean).join('\n');
-      addEvent(endDate, 'end', `■ ${p.name}${!p.endDate?'(예상)':''}`, endTooltip);
+      var tip2 = p.name + (p.hospital?'\n'+p.hospital:'') + (cgName?'\n간병인: '+cgName:'') + (!p.endDate?'\n(예상마감)':'');
+      addEv(endDate, 'end', '■ '+p.name+(!p.endDate?'(예상)':''), tip2);
     }
   });
 
-  // ② 간병인 시작일/마감일
-  caregivers.forEach(c => {
-    const pt = c.patientId ? patients.find(p=>String(p.id)===String(c.patientId)) : null;
-    const tooltip = [c.name, pt?pt.name:'', pt?pt.hospital:''].filter(Boolean).join('\n');
-    if(c.startDate) addEvent(c.startDate, 'start', `▶ ${c.name}(간)`, tooltip);
-    if(c.endDate)   addEvent(c.endDate,   'end',   `■ ${c.name}(간)`, tooltip);
+  // 간병인 시작/마감
+  caregivers.forEach(function(c) {
+    var pt = c.patientId ? patients.find(function(p){ return String(p.id)===String(c.patientId); }) : null;
+    var tip = c.name + (pt?'\n'+pt.name:'') + (pt&&pt.hospital?'\n'+pt.hospital:'');
+    if(c.startDate) addEv(c.startDate, 'start', '▶ '+c.name+'(간)', tip);
+    if(c.endDate)   addEv(c.endDate,   'end',   '■ '+c.name+'(간)', tip);
   });
 
-  // ③ 급여 지급일
-  caregivers.filter(c=>c.startDate).forEach(cg => {
-    calcPayDates(cg).forEach(p => {
-      const tooltip = `${cg.name}\n${p.label}${p.isReserve?'\n[예약이체]':''}`;
-      if(p.isReserve) addEvent(p.date, 'pay-reserve', `💰 ${cg.name} ${p.label}[예약]`, tooltip);
-      else            addEvent(p.date, 'pay',          `💰 ${cg.name} ${p.label}`, tooltip);
+  // 급여 지급일
+  caregivers.filter(function(c){ return !!c.startDate; }).forEach(function(cg) {
+    calcPayDates(cg).forEach(function(p) {
+      var tip = cg.name + '\n' + p.label + (p.isReserve?'\n[예약이체]':'');
+      if(p.isReserve) addEv(p.date, 'pay-reserve', '💰 '+cg.name+' '+p.label+'[예약]', tip);
+      else            addEv(p.date, 'pay',          '💰 '+cg.name+' '+p.label, tip);
     });
   });
 
   // 달력 그리기
-  const firstDay = new Date(_calYear, _calMonth, 1).getDay(); // 0=일
-  const lastDate = new Date(_calYear, _calMonth+1, 0).getDate();
-  const prevLast = new Date(_calYear, _calMonth, 0).getDate();
+  var firstDay = new Date(_calYear, _calMonth, 1).getDay();
+  var lastDate = new Date(_calYear, _calMonth+1, 0).getDate();
+  var prevLast = new Date(_calYear, _calMonth, 0).getDate();
+  var totalCells = Math.ceil((firstDay + lastDate) / 7) * 7;
+  var html = '';
 
-  let html = '';
-  const totalCells = Math.ceil((firstDay + lastDate) / 7) * 7;
-
-  for(let i = 0; i < totalCells; i++) {
-    let date, isThisMonth = true;
+  for(var i = 0; i < totalCells; i++) {
+    var date, isThisMonth = true;
     if(i < firstDay) {
-      date = prevLast - firstDay + i + 1;
-      isThisMonth = false;
+      date = prevLast - firstDay + i + 1; isThisMonth = false;
     } else if(i >= firstDay + lastDate) {
-      date = i - firstDay - lastDate + 1;
-      isThisMonth = false;
+      date = i - firstDay - lastDate + 1; isThisMonth = false;
     } else {
       date = i - firstDay + 1;
     }
 
-    const dateStr = isThisMonth
-      ? `${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(date).padStart(2,'0')}`
-      : '';
-    const isToday = dateStr === today;
-    const dow = i % 7; // 0=일, 6=토
-    const isSun = dow === 0, isSat = dow === 6;
+    var mm  = String(_calMonth+1).padStart(2,'0');
+    var dd  = String(date).padStart(2,'0');
+    var dateStr = isThisMonth ? (_calYear+'-'+mm+'-'+dd) : '';
+    var isToday = dateStr === today;
+    var dow = i % 7;
+    var classes = 'cal-cell';
+    if(!isThisMonth) classes += ' other-month';
+    if(isToday)      classes += ' today';
+    if(dow===0)      classes += ' sun-col';
+    if(dow===6)      classes += ' sat-col';
 
-    const dayEvents = (dateStr && events[dateStr]) || [];
-    const evHTML = dayEvents.slice(0,3).map(e =>
-      `<div class="cal-event ${e.type}" data-tip="${(e.tooltip||e.label).replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}" onmouseenter="showCalTip(event,this)" onmouseleave="hideCalTip()">${e.label}</div>`
-    ).join('');
-    const moreHTML = dayEvents.length > 3
-      ? `<span class="cal-more" onclick="event.stopPropagation();showCalDetail('${dateStr}')">+${dayEvents.length-3}개 더</span>`
-      : '';
+    var evList = (dateStr && events[dateStr]) || [];
+    var evHtml = '';
+    var limit = Math.min(evList.length, 3);
+    for(var k=0; k<limit; k++) {
+      var ev = evList[k];
+      var safeTip = ev.tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;');
+      evHtml += '<div class="cal-event ' + ev.type + '" data-tip="' + safeTip + '" onmouseenter="showCalTip(event,this)" onmouseleave="hideCalTip()">' + ev.label + '</div>';
+    }
+    if(evList.length > 3) {
+      evHtml += '<span class="cal-more" onclick="event.stopPropagation();showCalDetail(\'' + dateStr + '\')">' + (evList.length-3) + '개 더</span>';
+    }
 
-    const cellClass = [
-      'cal-cell',
-      !isThisMonth ? 'other-month' : '',
-      isToday ? 'today' : '',
-      isSun ? 'sun-col' : '',
-      isSat ? 'sat-col' : ''
-    ].filter(Boolean).join(' ');
-
-    const onclickAttr = dateStr ? `onclick="showCalDetail('${dateStr}')"` : '';
-    const styleAttr   = !dateStr ? 'style="cursor:default"' : '';
-
-    html += `<div class="${cellClass}" ${onclickAttr} ${styleAttr}>
-      <div class="cal-date-row"><div class="cal-date">${date}</div></div>
-      <div class="cal-events">${evHTML}${moreHTML}</div>
-    </div>`;
+    var onclick = dateStr ? ' onclick="showCalDetail(\'' + dateStr + '\')"' : '';
+    var style   = !dateStr ? ' style="cursor:default"' : '';
+    html += '<div class="' + classes + '"' + onclick + style + '>';
+    html += '<div class="cal-date-row"><div class="cal-date">' + date + '</div></div>';
+    html += '<div class="cal-events">' + evHtml + '</div>';
+    html += '</div>';
   }
 
   bodyEl.innerHTML = html;
@@ -4449,56 +4460,65 @@ function showCalDetail(dateStr) {
 let editNoticeId = null;
 
 function renderNotices() {
-  const el = document.getElementById('notice-list');
+  var el = document.getElementById('notice-list');
   if(!el) return;
 
-  // 월 필터
-  const monthEl = document.getElementById('notice-month');
-  const selMonth = monthEl ? monthEl.value : '';
-  let list = [...notices].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
-  if(selMonth) list = list.filter(n=>(n.createdAt||'').startsWith(selMonth));
+  var dateEl = document.getElementById('notice-date');
+  var selDate = dateEl ? dateEl.value : '';
+  var list = notices.slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+  if(selDate) list = list.filter(function(n){ return (n.createdAt||'').startsWith(selDate); });
 
-  const countEl = document.getElementById('notice-count');
-  if(countEl) countEl.textContent = list.length ? `${list.length}건` : '';
+  var countEl = document.getElementById('notice-count');
+  if(countEl) countEl.textContent = list.length ? list.length+'건' : '';
 
   if(!list.length) {
     el.innerHTML = '<div class="empty" style="padding:1rem 0"><p style="font-size:12px">공지사항이 없어요</p></div>';
     return;
   }
 
-  // 날짜별 그룹핑
-  const groups = {};
-  list.forEach(n => {
-    const d = n.createdAt || '날짜없음';
-    if(!groups[d]) groups[d] = [];
-    groups[d].push(n);
-  });
+  var levelColor = { urgent:'#dc2626', important:'var(--amber)', normal:'var(--gray)', auto:'var(--teal)' };
+  var levelLabel = { urgent:'🚨 긴급', important:'⚠️ 중요', normal:'📌', auto:'🔔 자동알림' };
 
-  const DAYS = ['일','월','화','수','목','금','토'];
-  const levelColor = { urgent:'#dc2626', important:'var(--amber)', normal:'var(--gray)', auto:'var(--teal)' };
-  const levelLabel = { urgent:'🚨 긴급', important:'⚠️ 중요', normal:'📌', auto:'🔔 자동알림' };
+  function renderItem(n) {
+    var color = levelColor[n.level||'normal'];
+    var label = levelLabel[n.level||'normal'];
+    var isAuto = n.level === 'auto';
+    var clickAttr = isAuto ? '' : 'onclick="editNoticeEntry(\'' + n.id + '\')" style="cursor:pointer"';
+    var delBtn = isAuto ? '' : '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--red);border-color:var(--red);margin-top:4px" onclick="event.stopPropagation();deleteNoticeById(\'' + n.id + '\')">삭제</button>';
+    var content = (n.content||'').slice(0,120) + ((n.content||'').length>120?'...':'');
+    return '<div style="border-left:3px solid ' + color + ';padding:8px 10px;margin-bottom:6px;background:var(--surface2);border-radius:0 var(--rsm) var(--rsm) 0" ' + clickAttr + '>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">'
+      + '<span style="font-size:11px;font-weight:700;color:' + color + '">' + label + '</span>'
+      + '<span style="font-size:10px;color:var(--gray)">' + (n.createdAt||'') + '</span>'
+      + '</div>'
+      + (n.title ? '<div style="font-size:13px;font-weight:700;margin-bottom:2px">' + n.title + '</div>' : '')
+      + '<div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.5">' + content + '</div>'
+      + delBtn + '</div>';
+  }
 
-  el.innerHTML = Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(date => {
-    const d = parseLocalDate(date);
-    const dayStr = d ? `(${DAYS[d.getDay()]}요일)` : '';
-    return `<div style="margin-bottom:1rem">
-      <div style="font-size:11px;font-weight:700;color:var(--amber);padding:6px 0;border-bottom:2px solid var(--amber-lt);margin-bottom:6px">
-        📅 ${date} ${dayStr}
-      </div>
-      ${groups[date].map(n=>`
-        <div style="border-left:3px solid ${levelColor[n.level||'normal']};padding:8px 10px;margin-bottom:6px;background:var(--surface2);border-radius:0 var(--rsm) var(--rsm) 0;${n.level!=='auto'?'cursor:pointer':''}" ${n.level!=='auto'?`onclick="editNoticeEntry('${n.id}')"`:''}">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-            <span style="font-size:11px;font-weight:700;color:${levelColor[n.level||'normal']}">${levelLabel[n.level||'normal']}</span>
-            <div style="display:flex;align-items:center;gap:6px">
-              ${n.level!=='auto'?`<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--red);border-color:var(--red)" onclick="event.stopPropagation();deleteNoticeById('${n.id}')">삭제</button>`:''}
-            </div>
-          </div>
-          ${n.title?`<div style="font-size:13px;font-weight:700;margin-bottom:3px">${n.title}</div>`:''}
-          <div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.5">${(n.content||'').slice(0,120)}${(n.content||'').length>120?'...':''}</div>
-        </div>
-      `).join('')}
-    </div>`;
-  }).join('');
+  var SHOW = 2;
+  var shown  = list.slice(0, SHOW);
+  var hidden = list.slice(SHOW);
+  var html = '';
+  shown.forEach(function(n){ html += renderItem(n); });
+
+  if(hidden.length > 0) {
+    html += '<div id="notice-hidden" style="display:none">';
+    hidden.forEach(function(n){ html += renderItem(n); });
+    html += '</div>';
+    html += '<button class="btn btn-sm" id="notice-more-btn" style="width:100%;justify-content:center;margin-top:4px;font-size:12px;color:var(--teal);border-color:var(--teal)" onclick="toggleNoticeMore()">+ ' + hidden.length + '건 더 보기</button>';
+  }
+
+  el.innerHTML = html;
+}
+
+function toggleNoticeMore() {
+  var hidden = document.getElementById('notice-hidden');
+  var btn    = document.getElementById('notice-more-btn');
+  if(!hidden || !btn) return;
+  var isOpen = hidden.style.display !== 'none';
+  hidden.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = isOpen ? '+ ' + hidden.children.length + '건 더 보기' : '▲ 접기';
 }
 
 function addNoticeEntry() {
@@ -4699,29 +4719,41 @@ function renderMemo() {
   }).join('');
 }
 
+function fillMemoSelects() {
+  const ptSel = document.getElementById('memo-patient');
+  if(ptSel) {
+    ptSel.innerHTML = '<option value="">— 없음 —</option>' +
+      patients.map(p=>`<option value="${p.id}">${p.name} (${p.hospital||''})</option>`).join('');
+  }
+  const cgSel = document.getElementById('memo-caregiver');
+  if(cgSel) {
+    cgSel.innerHTML = '<option value="">— 없음 —</option>' +
+      caregivers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  }
+}
+
 function addMemoEntry() {
   editMemoId = null;
   document.getElementById('memo-editor').style.display = 'block';
+  document.getElementById('notice-editor').style.display = 'none';
   document.getElementById('memo-editor-title').textContent = '새 일지 작성';
   document.getElementById('memo-date').value   = todayStr();
   document.getElementById('memo-author').value = cfg.name || '';
   document.getElementById('memo-content').value = '';
   document.getElementById('memo-delete-btn').style.display = 'none';
-  const ptSel = document.getElementById('memo-patient');
-  ptSel.innerHTML = '<option value="">— 없음 —</option>' +
-    patients.map(p=>`<option value="${p.id}">${p.name} (${p.hospital||''})</option>`).join('');
-  const cgSel = document.getElementById('memo-caregiver');
-  cgSel.innerHTML = '<option value="">— 없음 —</option>' +
-    caregivers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  ptSel.value = ''; cgSel.value = '';
+  fillMemoSelects();
+  document.getElementById('memo-patient').value   = '';
+  document.getElementById('memo-caregiver').value = '';
 }
 
 function editMemoEntry(id) {
   const m = memos.find(x=>String(x.id)===String(id));
   if(!m) return;
-  editMemoId = id;
-  addMemoEntry();
+  editMemoId = id; // addMemoEntry 전에 먼저 설정
+  document.getElementById('memo-editor').style.display = 'block';
+  document.getElementById('notice-editor').style.display = 'none';
   document.getElementById('memo-editor-title').textContent = '일지 수정';
+  fillMemoSelects();
   document.getElementById('memo-date').value      = m.date||'';
   document.getElementById('memo-author').value    = m.author||'';
   document.getElementById('memo-content').value   = m.content||'';
@@ -4797,8 +4829,8 @@ function initMemoPage() {
   const monthEl = document.getElementById('memo-month');
   if(monthEl && !monthEl.value) monthEl.value = thisMonth;
 
-  const noticeMonthEl = document.getElementById('notice-month');
-  if(noticeMonthEl && !noticeMonthEl.value) noticeMonthEl.value = thisMonth;
+  const noticeMonthEl = document.getElementById('notice-date');
+  if(noticeMonthEl && !noticeMonthEl.value) noticeMonthEl.value = thisMonth.slice(0,10) || todayStr();
 
   const ptSel = document.getElementById('quick-memo-pt');
   if(ptSel) {
