@@ -4354,7 +4354,10 @@ function renderCalendar() {
       isSat ? 'sat-col' : ''
     ].filter(Boolean).join(' ');
 
-    html += `<div class="${cellClass}" onclick="${dateStr?`showCalDetail('${dateStr}')`:''}" style="${!dateStr?'cursor:default':''}">
+    const onclickAttr = dateStr ? `onclick="showCalDetail('${dateStr}')"` : '';
+    const styleAttr   = !dateStr ? 'style="cursor:default"' : '';
+
+    html += `<div class="${cellClass}" ${onclickAttr} ${styleAttr}>
       <div class="cal-date-row"><div class="cal-date">${date}</div></div>
       <div class="cal-events">${evHTML}${moreHTML}</div>
     </div>`;
@@ -4371,42 +4374,55 @@ function showCalDetail(dateStr) {
 
   const DAYS = ['일','월','화','수','목','금','토'];
   const d = parseLocalDate(dateStr);
-  const dayStr = d ? `(${DAYS[d.getDay()]}요일)` : '';
-  dateEl.textContent = `${dateStr} ${dayStr}`;
+  const dayStr = d ? '(' + DAYS[d.getDay()] + '요일)' : '';
+  dateEl.textContent = dateStr + ' ' + dayStr;
 
-  let html = '';
+  const parts = [];
 
   // 환자 이벤트
   patients.forEach(p => {
-    if(p.startDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">
-      <div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병 시작</div>
-      <div style="font-size:13px;font-weight:700">${p.name} (${p.hospital||''})</div>
-      <div style="font-size:11px;color:var(--gray)">${p.startTime||''} ${p.duration?'· '+p.duration:''}</div>
-    </div>`;
-    const endDate = p.endDate || (()=>{
-      if(!p.startDate||!p.duration) return '';
-      const days=parseDurationDays(p.duration); if(!days) return '';
-      const dd=parseLocalDate(p.startDate); dd.setDate(dd.getDate()+days); return toLocalDateStr(dd);
-    })();
-    if(endDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">
-      <div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병 마감${!p.endDate?' (예상)':''}</div>
-      <div style="font-size:13px;font-weight:700">${p.name} (${p.hospital||''})</div>
-      <div style="font-size:11px;color:var(--gray)">${p.endTime||''}</div>
-    </div>`;
+    const cg = caregivers.find(c=>String(c.patientId)===String(p.id));
+    const cgStr = cg ? ' / 간병인: ' + cg.name : '';
+    if(p.startDate === dateStr) {
+      parts.push('<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병 시작</div>'
+        + '<div style="font-size:13px;font-weight:700">' + p.name + ' (' + (p.hospital||'') + ')</div>'
+        + '<div style="font-size:11px;color:var(--gray)">' + (p.startTime||'') + (p.duration?' · '+p.duration:'') + cgStr + '</div>'
+        + '</div>');
+    }
+    let endDate = p.endDate;
+    if(!endDate && p.startDate && p.duration) {
+      const days = parseDurationDays(p.duration);
+      if(days) {
+        const dd = parseLocalDate(p.startDate);
+        if(dd) { dd.setDate(dd.getDate()+days); endDate = toLocalDateStr(dd); }
+      }
+    }
+    if(endDate === dateStr) {
+      parts.push('<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병 마감' + (!p.endDate?' (예상)':'') + '</div>'
+        + '<div style="font-size:13px;font-weight:700">' + p.name + ' (' + (p.hospital||'') + ')</div>'
+        + '<div style="font-size:11px;color:var(--gray)">' + (p.endTime||'') + cgStr + '</div>'
+        + '</div>');
+    }
   });
 
   // 간병인 이벤트
   caregivers.forEach(c => {
-    if(c.startDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">
-      <div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병인 시작</div>
-      <div style="font-size:13px;font-weight:700">${c.name}</div>
-      <div style="font-size:11px;color:var(--gray)">${c.startTime||''}</div>
-    </div>`;
-    if(c.endDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">
-      <div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병인 마감</div>
-      <div style="font-size:13px;font-weight:700">${c.name}</div>
-      <div style="font-size:11px;color:var(--gray)">${c.endTime||''}</div>
-    </div>`;
+    if(c.startDate === dateStr) {
+      parts.push('<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병인 시작</div>'
+        + '<div style="font-size:13px;font-weight:700">' + c.name + '</div>'
+        + '<div style="font-size:11px;color:var(--gray)">' + (c.startTime||'') + '</div>'
+        + '</div>');
+    }
+    if(c.endDate === dateStr) {
+      parts.push('<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병인 마감</div>'
+        + '<div style="font-size:13px;font-weight:700">' + c.name + '</div>'
+        + '<div style="font-size:11px;color:var(--gray)">' + (c.endTime||'') + '</div>'
+        + '</div>');
+    }
   });
 
   // 급여 이벤트
@@ -4415,16 +4431,18 @@ function showCalDetail(dateStr) {
       if(p.date !== dateStr) return;
       const bgColor = p.isReserve ? '#FFF3E0' : 'var(--amber-lt)';
       const bdColor = p.isReserve ? '#E65100' : 'var(--amber)';
-      html += `<div style="padding:8px;border-left:3px solid ${bdColor};margin-bottom:6px;background:${bgColor};border-radius:0 var(--rsm) var(--rsm) 0">
-        <div style="font-size:12px;font-weight:700;color:${bdColor}">💰 ${p.label}${p.isReserve?' [예약이체]':''}</div>
-        <div style="font-size:13px;font-weight:700">${cg.name}</div>
-        ${p.isReserve?`<div style="font-size:11px;color:var(--gray)">마감일: ${p.payDate||p.endDate}</div>`:''}
-      </div>`;
+      const reserveStr = p.isReserve ? '<div style="font-size:11px;color:var(--gray)">마감일: ' + (p.payDate||p.endDate) + '</div>' : '';
+      parts.push('<div style="padding:8px;border-left:3px solid ' + bdColor + ';margin-bottom:6px;background:' + bgColor + ';border-radius:0 var(--rsm) var(--rsm) 0">'
+        + '<div style="font-size:12px;font-weight:700;color:' + bdColor + '">💰 ' + p.label + (p.isReserve?' [예약이체]':'') + '</div>'
+        + '<div style="font-size:13px;font-weight:700">' + cg.name + '</div>'
+        + reserveStr
+        + '</div>');
     });
   });
 
-  if(!html) html = '<div style="padding:1rem;text-align:center;color:var(--gray);font-size:13px">이날 일정이 없어요</div>';
-  bodyEl.innerHTML = html;
+  bodyEl.innerHTML = parts.length
+    ? parts.join('')
+    : '<div style="padding:1rem;text-align:center;color:var(--gray);font-size:13px">이날 일정이 없어요</div>';
   detailEl.style.display = 'block';
   detailEl.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
