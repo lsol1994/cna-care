@@ -807,15 +807,30 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 <!-- ══ MEMO ══ -->
 <div class="page" id="page-memo">
   <div class="sh">
-    <div><div class="sh-title">📝 업무일지</div><div class="sh-sub">날짜별 업무 기록 및 환자/간병인 메모</div></div>
-    <button class="btn btn-teal btn-sm" onclick="addMemoEntry()">
-      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>새 일지 작성
-    </button>
+    <div><div class="sh-title">📝 업무일지</div><div class="sh-sub">공지사항·알림 자동 저장 및 업무 기록 공유</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="addNoticeEntry()">
+        <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>공지 추가
+      </button>
+      <button class="btn btn-teal btn-sm" onclick="addMemoEntry()">
+        <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>일지 작성
+      </button>
+    </div>
   </div>
 
   <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:1rem">
-    <!-- 왼쪽: 업무일지 목록 -->
+    <!-- 왼쪽 -->
     <div>
+      <!-- 공지사항/알림 -->
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-hd" style="justify-content:space-between">
+          <div><span class="dot" style="background:var(--amber)"></span>📢 공지사항 / 알림</div>
+          <span style="font-size:11px;color:var(--gray)" id="notice-count"></span>
+        </div>
+        <div id="notice-list"></div>
+      </div>
+
+      <!-- 업무일지 -->
       <div class="card">
         <div class="card-hd" style="justify-content:space-between">
           <div><span class="dot"></span>업무일지</div>
@@ -827,34 +842,53 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
     <!-- 오른쪽: 작성/상세 -->
     <div>
+      <!-- 공지 작성 에디터 -->
+      <div class="card" id="notice-editor" style="display:none;margin-bottom:1rem">
+        <div class="card-hd" style="justify-content:space-between">
+          <div><span class="dot" style="background:var(--amber)"></span><span id="notice-editor-title">공지 작성</span></div>
+          <button class="btn btn-sm" onclick="document.getElementById('notice-editor').style.display='none'">✕</button>
+        </div>
+        <div class="field">
+          <label>제목</label>
+          <input type="text" id="notice-title-input" placeholder="공지 제목">
+        </div>
+        <div class="field">
+          <label>내용</label>
+          <textarea id="notice-content" rows="5" placeholder="공지 내용을 입력하세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
+        </div>
+        <div class="field">
+          <label>중요도</label>
+          <select id="notice-level" style="font-size:13px">
+            <option value="normal">일반</option>
+            <option value="important">⚠️ 중요</option>
+            <option value="urgent">🚨 긴급</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:1rem">
+          <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveNoticeEntry()">공지 저장</button>
+          <button class="btn" id="notice-delete-btn" style="color:var(--red);border-color:var(--red);display:none" onclick="deleteNoticeEntry()">삭제</button>
+        </div>
+      </div>
+
+      <!-- 일지 작성 에디터 -->
       <div class="card" id="memo-editor" style="display:none">
         <div class="card-hd" style="justify-content:space-between">
           <div><span class="dot"></span><span id="memo-editor-title">일지 작성</span></div>
           <button class="btn btn-sm" onclick="document.getElementById('memo-editor').style.display='none'">✕</button>
         </div>
-        <div class="field">
-          <label>날짜</label>
-          <input type="date" id="memo-date">
-        </div>
-        <div class="field">
-          <label>작성자</label>
-          <input type="text" id="memo-author" placeholder="이름 입력">
-        </div>
+        <div class="field"><label>날짜</label><input type="date" id="memo-date"></div>
+        <div class="field"><label>작성자</label><input type="text" id="memo-author" placeholder="이름 입력"></div>
         <div class="field">
           <label>내용</label>
-          <textarea id="memo-content" rows="8" placeholder="업무 내용, 특이사항, 공유할 내용을 자유롭게 작성하세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
+          <textarea id="memo-content" rows="6" placeholder="업무 내용, 특이사항, 공유할 내용을 자유롭게 작성하세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
         </div>
         <div class="field">
           <label>관련 환자 <span style="font-size:10px;color:var(--gray)">(선택)</span></label>
-          <select id="memo-patient" style="font-size:13px">
-            <option value="">— 없음 —</option>
-          </select>
+          <select id="memo-patient" style="font-size:13px"><option value="">— 없음 —</option></select>
         </div>
         <div class="field">
           <label>관련 간병인 <span style="font-size:10px;color:var(--gray)">(선택)</span></label>
-          <select id="memo-caregiver" style="font-size:13px">
-            <option value="">— 없음 —</option>
-          </select>
+          <select id="memo-caregiver" style="font-size:13px"><option value="">— 없음 —</option></select>
         </div>
         <div style="display:flex;gap:8px;margin-top:1rem">
           <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveMemoEntry()">저장</button>
@@ -862,11 +896,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         </div>
       </div>
 
-      <!-- 환자/간병인 메모 -->
+      <!-- 빠른 메모 -->
       <div class="card" style="margin-top:1rem">
-        <div class="card-hd"><span class="dot"></span>빠른 메모</div>
+        <div class="card-hd"><span class="dot"></span>환자 빠른 메모</div>
         <div class="field">
-          <label>환자 선택</label>
           <select id="quick-memo-pt" onchange="loadQuickMemo()" style="font-size:13px">
             <option value="">— 환자 선택 —</option>
           </select>
@@ -1285,6 +1318,7 @@ let reportLogs = JSON.parse(localStorage.getItem('cnc_rptlogs')   || '[]');
 let cfg        = JSON.parse(localStorage.getItem('cnc_cfg')       || '{"name":"씨앤에이케어간병협회","phone":"","sheetsUrl":"","remindInterval":15,"insuranceDays":3,"sound":true,"bankName":"","bankAccount":"","bankHolder":""}');
 let members    = JSON.parse(localStorage.getItem('cnc_members')   || '[]');
 let memos      = JSON.parse(localStorage.getItem('cnc_memos')     || '[]');
+let notices    = JSON.parse(localStorage.getItem('cnc_notices')   || '[]');
 
 let selPt          = null;
 let editCgId       = null;
@@ -1359,6 +1393,7 @@ function save() {
   localStorage.setItem('cnc_cfg',       JSON.stringify(cfg));
   localStorage.setItem('cnc_members',   JSON.stringify(members));
   localStorage.setItem('cnc_memos',     JSON.stringify(memos));
+  localStorage.setItem('cnc_notices',   JSON.stringify(notices));
 
   // 2. Firebase 저장 (300ms 디바운스)
   if(!db) { showSyncStatus('저장 중... (연결 대기)'); return; }
@@ -1371,7 +1406,7 @@ function save() {
       showSyncStatus('저장 중...');
       const payload = cleanForFirebase({
         patients, caregivers, rooms, logs,
-        attendance, reportLogs, cfg, members, memos
+        attendance, reportLogs, cfg, members, memos, notices
       });
       db.ref('cnc').set(payload)
         .then(() => {
@@ -1485,6 +1520,8 @@ function attachFirebaseListener() {
     if(d.cfg && typeof d.cfg === 'object') { cfg = d.cfg; localStorage.setItem('cnc_cfg', JSON.stringify(cfg)); }
     const fbMemos = fbToArr(d.memos);
     if(fbMemos.length > 0) { memos = fbMemos; localStorage.setItem('cnc_memos', JSON.stringify(memos)); }
+    const fbNotices = fbToArr(d.notices);
+    if(fbNotices.length > 0) { notices = fbNotices; localStorage.setItem('cnc_notices', JSON.stringify(notices)); }
 
     if(!_fbReady) {
       _fbReady = true;
@@ -4066,8 +4103,196 @@ function calcTotalPay(cg) {
   const total = payPerDay * days;
   return `${days}일 × ${payPerDay.toLocaleString()}원 = ${total.toLocaleString()}원`;
 }
-// ─── 업무일지 ───
-let editMemoId = null;
+// ─── 공지사항/알림 ───
+let editNoticeId = null;
+
+function renderNotices() {
+  const el = document.getElementById('notice-list');
+  if(!el) return;
+  const list = [...notices].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,20);
+  const countEl = document.getElementById('notice-count');
+  if(countEl) countEl.textContent = notices.length ? `${notices.length}건` : '';
+  if(!list.length) {
+    el.innerHTML = '<div class="empty" style="padding:1rem 0"><p style="font-size:12px">공지사항이 없어요</p></div>';
+    return;
+  }
+  const levelColor = { urgent:'#dc2626', important:'var(--amber)', normal:'var(--gray)', auto:'var(--teal)' };
+  const levelLabel = { urgent:'🚨 긴급', important:'⚠️ 중요', normal:'📌', auto:'🔔 자동알림' };
+  el.innerHTML = list.map(n => `
+    <div style="border-left:3px solid ${levelColor[n.level||'normal']};padding:8px 10px;margin-bottom:8px;background:var(--surface2);border-radius:0 var(--rsm) var(--rsm) 0;cursor:pointer" onclick="${n.level==='auto'?'':` editNoticeEntry('${n.id}')`}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+        <span style="font-size:11px;font-weight:700;color:${levelColor[n.level||'normal']}">${levelLabel[n.level||'normal']}</span>
+        <span style="font-size:10px;color:var(--gray)">${n.createdAt||''}</span>
+      </div>
+      ${n.title?`<div style="font-size:13px;font-weight:700;margin-bottom:3px">${n.title}</div>`:''}
+      <div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.5">${(n.content||'').slice(0,100)}${(n.content||'').length>100?'...':''}</div>
+      ${n.level!=='auto'?`<button class="btn btn-sm" style="margin-top:6px;font-size:10px;color:var(--red);border-color:var(--red)" onclick="event.stopPropagation();deleteNoticeById('${n.id}')">삭제</button>`:''}
+    </div>
+  `).join('');
+}
+
+function addNoticeEntry() {
+  editNoticeId = null;
+  document.getElementById('notice-editor').style.display = 'block';
+  document.getElementById('memo-editor').style.display   = 'none';
+  document.getElementById('notice-editor-title').textContent = '공지 작성';
+  document.getElementById('notice-title-input').value = '';
+  document.getElementById('notice-content').value     = '';
+  document.getElementById('notice-level').value       = 'normal';
+  document.getElementById('notice-delete-btn').style.display = 'none';
+}
+
+function editNoticeEntry(id) {
+  const n = notices.find(x=>String(x.id)===String(id));
+  if(!n) return;
+  editNoticeId = id;
+  document.getElementById('notice-editor').style.display = 'block';
+  document.getElementById('notice-editor-title').textContent = '공지 수정';
+  document.getElementById('notice-title-input').value = n.title||'';
+  document.getElementById('notice-content').value     = n.content||'';
+  document.getElementById('notice-level').value       = n.level||'normal';
+  document.getElementById('notice-delete-btn').style.display = 'inline-flex';
+}
+
+function saveNoticeEntry() {
+  const title   = document.getElementById('notice-title-input').value.trim();
+  const content = document.getElementById('notice-content').value.trim();
+  const level   = document.getElementById('notice-level').value;
+  if(!content) { toast('내용을 입력해주세요', true); return; }
+  if(editNoticeId) {
+    const n = notices.find(x=>String(x.id)===String(editNoticeId));
+    if(n) Object.assign(n, {title, content, level, updatedAt:todayStr()});
+  } else {
+    notices.unshift({ id:Date.now()+Math.random(), title, content, level, createdAt:todayStr(), type:'manual' });
+  }
+  save(); renderNotices();
+  document.getElementById('notice-editor').style.display = 'none';
+  toast(`✅ 공지 ${editNoticeId?'수정':'등록'}됐어요`);
+  editNoticeId = null;
+}
+
+function deleteNoticeEntry() {
+  if(!editNoticeId || !confirm('삭제할까요?')) return;
+  deleteNoticeById(editNoticeId);
+  document.getElementById('notice-editor').style.display = 'none';
+  editNoticeId = null;
+}
+
+function deleteNoticeById(id) {
+  notices = notices.filter(n=>String(n.id)!==String(id));
+  save(); renderNotices();
+  toast('삭제됐어요');
+}
+
+// 알림 자동 저장 (공지사항/알림에 자동 기록)
+function saveAutoNotice(content, level='auto') {
+  notices.unshift({
+    id: Date.now()+Math.random(),
+    title: '',
+    content,
+    level,
+    createdAt: todayStr(),
+    type: 'auto'
+  });
+  // 자동 알림은 최대 50개 유지
+  if(notices.length > 50) notices = notices.slice(0, 50);
+  save();
+}
+
+// ─── 통합 알림 팝업 ───
+// 모든 알림을 한 팝업에 취합
+let _pendingAlerts = [];
+
+function showUnifiedRemind(alerts) {
+  if(!alerts.length) return;
+  const popup = document.getElementById('remind-popup');
+  document.getElementById('remind-popup-body').innerHTML =
+    alerts.map(a=>
+      `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.15);line-height:1.6">${a}</div>`
+    ).join('');
+  popup.style.display = 'block';
+  if(cfg.sound !== false) playBeep();
+}
+
+function closeRemindPopup() {
+  document.getElementById('remind-popup').style.display = 'none';
+  _pendingAlerts = [];
+}
+
+// 모든 알림을 한꺼번에 체크 (통합)
+function checkAllRemind() {
+  const today = todayStr();
+  const alerts = [];
+
+  // ① 간병 시작일/마감일 알림
+  patients.filter(p=>p.status!=='종료').forEach(p=>{
+    if(p.startDate) {
+      const diff = Math.round((parseLocalDate(p.startDate)-new Date().setHours(0,0,0,0))/86400000);
+      if(diff===0) alerts.push(`▶ <b>${p.name}</b> 오늘 간병 시작! (${p.hospital})`);
+      else if(diff===1) alerts.push(`▶ <b>${p.name}</b> 내일 간병 시작 (${p.startDate})`);
+    }
+    if(p.endDate) {
+      const diff = Math.round((parseLocalDate(p.endDate)-new Date().setHours(0,0,0,0))/86400000);
+      if(diff===0) alerts.push(`■ <b>${p.name}</b> 오늘 간병 마감! (${p.hospital})`);
+      else if(diff===1) alerts.push(`■ <b>${p.name}</b> 내일 간병 마감 (${p.endDate})`);
+    }
+  });
+
+  // ② 급여 지급 알림
+  const confirmed = localStorage.getItem('cnc_payRemindConfirmed');
+  const payDone   = confirmed === today;
+  if(!payDone) {
+    caregivers.filter(c=>c.startDate&&(c.workStatus==='근무중'||c.workStatus==='종료')).forEach(cg=>{
+      calcPayDates(cg).forEach(p=>{
+        if(p.date !== today) return;
+        const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
+        const ptName = pt ? ` (${pt.name})` : '';
+        if(p.isReserve) alerts.push(`💰 <b>${cg.name}</b> ${p.label} <span style="color:var(--amber)">[예약이체]</span> (${p.payDate||p.endDate} 마감)`);
+        else alerts.push(`💰 <b>${cg.name}</b> ${p.label} 지급일${ptName}`);
+      });
+    });
+  }
+
+  if(alerts.length > 0) {
+    // 공지사항/알림에 자동 저장
+    saveAutoNotice(alerts.map(a=>a.replace(/<[^>]+>/g,'')).join('\n'));
+    // 통합 팝업 표시
+    const popup = document.getElementById('remind-popup');
+    document.getElementById('remind-popup-body').innerHTML =
+      `<div style="font-weight:700;margin-bottom:8px;font-size:14px">📋 오늘의 알림 (${alerts.length}건)</div>` +
+      alerts.map(a=>`<div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.15);line-height:1.6">${a}</div>`).join('');
+    popup.style.display = 'block';
+    if(cfg.sound!==false) playBeep();
+    // 급여 알림 포함 시 확인 처리
+    if(!payDone && alerts.some(a=>a.includes('💰'))) {
+      popup.dataset.hasPay = 'true';
+    } else {
+      popup.dataset.hasPay = '';
+    }
+  }
+}
+
+// 기존 개별 알림 함수를 통합 함수로 대체
+function checkDateRemind() { checkAllRemind(); }
+function checkPayRemind(testMode) {
+  if(testMode) {
+    // 테스트 모드만 기존 방식 유지
+    const today = todayStr();
+    const alerts = [];
+    caregivers.filter(c=>c.startDate).forEach(cg=>{
+      calcPayDates(cg).filter(p=>p.date>=today).slice(0,2).forEach(p=>{
+        const isToday = p.date===today;
+        const prefix  = !isToday?`📅 ${p.date} `:'';
+        if(p.isReserve) alerts.push(`${prefix}💰 <b>${cg.name}</b> ${p.label} [예약이체] (${p.payDate||p.endDate} 마감)`);
+        else alerts.push(`${prefix}💰 <b>${cg.name}</b> ${p.label} 지급일`);
+      });
+    });
+    if(alerts.length) showUnifiedRemind(alerts);
+    else toast('예정된 급여 지급일이 없어요');
+  } else {
+    checkAllRemind();
+  }
+}
 
 function renderMemo() {
   const el = document.getElementById('memo-list');
@@ -4190,6 +4415,7 @@ function initMemoPage() {
     ptSel.innerHTML = '<option value="">— 환자 선택 —</option>' +
       patients.map(p=>`<option value="${p.id}">${p.name} (${p.hospital||''})</option>`).join('');
   }
+  renderNotices();
   renderMemo();
 }
 
@@ -4254,82 +4480,7 @@ function calcPayDates(cg) {
   return results;
 }
 
-function closeRemindPopup() {
-  document.getElementById('remind-popup').style.display = 'none';
-}
 
-function confirmPayRemind() {
-  localStorage.setItem('cnc_payRemindConfirmed', todayStr());
-  document.getElementById('remind-popup').style.display = 'none';
-}
-
-function checkPayRemind(testMode) {
-  const today = todayStr();
-
-  // 테스트 모드 아닐 때: 오늘 이미 확인(닫기)한 경우 스킵
-  if(!testMode) {
-    const confirmed = localStorage.getItem('cnc_payRemindConfirmed');
-    if(confirmed === today) return;
-  }
-
-  const alerts = [];
-
-  caregivers.filter(c => c.startDate && (c.workStatus === '근무중' || c.workStatus === '종료')).forEach(cg => {
-    const payDates = calcPayDates(cg);
-    payDates.forEach(p => {
-      const isToday = p.date === today;
-      const isFuture = testMode && p.date > today;
-      if(!isToday && !isFuture) return;
-
-      const pt = patients.find(pt=>String(pt.id)===String(cg.patientId));
-      const ptName = pt ? pt.name : '';
-      const prefix = !isToday ? `📅 ${p.date} ` : '';
-      const endedTag = cg.workStatus==='종료' ? ' <span style="opacity:.6">(종료)</span>' : '';
-
-      if(p.isReserve) {
-        alerts.push(`${prefix}💰 <b>${cg.name}</b>${endedTag} ${p.label} <span style="color:var(--amber)">[예약이체]</span> (${p.payDate||p.endDate} 마감)`);
-      } else {
-        alerts.push(`${prefix}💰 <b>${cg.name}</b>${endedTag} ${p.label} 지급일${ptName?' ('+ptName+')':''}`);
-      }
-    });
-  });
-
-  if(alerts.length > 0) {
-    const popup = document.getElementById('remind-popup');
-    document.getElementById('remind-popup-body').innerHTML =
-      `💰 <b>${testMode?'급여 일정 미리보기':'급여 지급 알림'}</b>\n\n` +
-      alerts.map(a=>`<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.15)">${a}</div>`).join('');
-    popup.style.display = 'block';
-    if(!testMode && cfg.sound !== false) playBeep();
-  } else if(testMode) {
-    toast('오늘 이후 예정된 급여 지급일이 없어요');
-  }
-}
-
-function checkDateRemind() {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const alerts = [];
-  patients.filter(p=>p.status!=='종료').forEach(p=>{
-    if(p.startDate) {
-      const diff = Math.round((parseLocalDate(p.startDate).setHours(0,0,0,0) - today) / 86400000);
-      if(diff === 0) alerts.push(`▶ <b>${p.name}</b> 오늘 간병 시작! (${p.hospital})`);
-      else if(diff === 1) alerts.push(`▶ <b>${p.name}</b> 내일 간병 시작 (${p.startDate})`);
-    }
-    if(p.endDate) {
-      const diff = Math.round((parseLocalDate(p.endDate).setHours(0,0,0,0) - today) / 86400000);
-      if(diff === 0) alerts.push(`■ <b>${p.name}</b> 오늘 간병 마감! (${p.hospital})`);
-      else if(diff === 1) alerts.push(`■ <b>${p.name}</b> 내일 간병 마감 (${p.endDate})`);
-    }
-  });
-  if(alerts.length > 0) {
-    const popup = document.getElementById('remind-popup');
-    document.getElementById('remind-popup-body').innerHTML =
-      `📅 <b>시작/마감 알림</b>\n\n` +
-      alerts.map(a=>`<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.15)">${a}</div>`).join('');
-    popup.style.display = 'block';
-    if(cfg.sound !== false) playBeep();
-  }
-}
 
 // ─── 날짜 유틸 ───
 // 'YYYY-MM-DD' 문자열을 로컬 시간 기준으로 파싱 (UTC 파싱 방지)
