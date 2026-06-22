@@ -3354,6 +3354,7 @@ function confirmEarlyTerminate(cgId) {
   if(pt) {
     const prevCgName = cg.name;
     if(termType === 'end') {
+      // 완전 종료: 환자도 종료 처리
       pt.status        = '종료';
       pt.recruited     = true;
       pt.endDate       = endDate;
@@ -3362,9 +3363,12 @@ function confirmEarlyTerminate(cgId) {
       if(reason) pt.endReason = reason;
       sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate, caregiverName:'', status:'종료'});
     } else {
+      // 재모집: 환자 모집중 복귀 + 실제 중도종료일로 마감일 업데이트
       pt.status           = '모집중';
       pt.recruited        = false;
       pt.caregiverName    = '';
+      pt.endDate          = endDate;   // ← 중도종료일로 마감일 업데이트
+      pt.endTime          = endTime;
       pt.recruitStartDate = endDate;
       if(!pt.recruitHistory) pt.recruitHistory = [];
       pt.recruitHistory.push({
