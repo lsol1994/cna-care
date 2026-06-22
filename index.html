@@ -326,7 +326,40 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   /* 출퇴근 날짜 컨트롤 */
   .card-hd[style*="justify-content"]{flex-wrap:wrap;gap:6px}
 
-  /* 배상보험 현황 */
+  /* 캘린더 */
+.cal-wrap{background:var(--surface);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;border:1px solid var(--border)}
+.cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border)}
+.cal-weekday{text-align:center;font-size:11px;font-weight:600;padding:12px 0;color:var(--gray);letter-spacing:.5px;text-transform:uppercase}
+.cal-weekday.sun{color:var(--red)}.cal-weekday.sat{color:var(--blue)}
+.cal-body{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(100px,auto)}
+.cal-cell{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;min-height:100px;position:relative;cursor:pointer;transition:background .15s}
+.cal-cell:hover{background:rgba(11,122,110,.04)}
+.cal-cell:nth-child(7n){border-right:none}
+.cal-cell.other-month{background:#fafaf9}
+.cal-cell.other-month .cal-date{color:var(--gray-lt)}
+.cal-cell.today{background:rgba(11,122,110,.04)}
+.cal-date{font-size:12px;font-weight:600;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;margin-bottom:3px;color:var(--black)}
+.cal-cell.today .cal-date{background:var(--teal);color:#fff!important;font-weight:900}
+.cal-cell.sun-col:not(.today) .cal-date{color:var(--red)}
+.cal-cell.sat-col:not(.today) .cal-date{color:var(--blue)}
+/* 이벤트 바 - 구글캘린더 스타일 */
+.cal-event{font-size:11px;padding:2px 6px;border-radius:4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.6;font-weight:600;position:relative;cursor:pointer;transition:opacity .1s}
+.cal-event:hover{opacity:.85}
+.cal-event.start{background:#E5F3F1;color:#0B7A6E}
+.cal-event.end{background:#FCEAEA;color:#B83232}
+.cal-event.pay{background:#FDF3E3;color:#C07A10}
+.cal-event.pay-reserve{background:#FFF3E0;color:#E65100}
+/* 툴팁 */
+.cal-tooltip{position:fixed;background:var(--black);color:#fff;font-size:11px;padding:6px 10px;border-radius:6px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .15s;max-width:200px;line-height:1.5;white-space:pre-wrap;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.cal-tooltip.show{opacity:1}
+.cal-more{font-size:10px;color:var(--teal);padding:2px 6px;font-weight:700;cursor:pointer}
+.cal-more:hover{text-decoration:underline}
+@media(max-width:768px){
+  .cal-body{grid-auto-rows:minmax(65px,auto)}
+  .cal-cell{min-height:65px;padding:3px}
+  .cal-date{width:22px;height:22px;font-size:10px}
+  .cal-event{font-size:9px;padding:1px 4px}
+}
   #insurance-list > div{flex-wrap:wrap}
   #insurance-list .badge{font-size:10px}
 
@@ -412,6 +445,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <button class="top-tab" id="tt-caregiver" onclick="showPage('caregiver')">간병인 관리</button>
   <button class="top-tab" id="tt-report" onclick="showPage('report')" style="color:var(--amber);font-weight:700">📋 업체보고</button>
   <button class="top-tab" id="tt-members" onclick="showPage('members')" style="color:var(--blue);font-weight:700">🏢 협회 간병인</button>
+  <button class="top-tab" id="tt-calendar" onclick="showPage('calendar')" style="color:var(--blue);font-weight:700">📅 캘린더</button>
   <button class="top-tab" id="tt-memo" onclick="showPage('memo')" style="color:var(--teal);font-weight:700">📝 업무일지</button>
   <button class="top-tab" id="tt-log" onclick="showPage('log')">발송 기록</button>
   <button class="top-tab" id="tt-settings" onclick="showPage('settings')">설정</button>
@@ -443,6 +477,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   </button>
   <button class="aside-btn" id="mb-members" onclick="showPage('members')" style="color:var(--blue);font-weight:700">
     <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>협회 간병인
+  </button>
+  <button class="aside-btn" id="mb-calendar" onclick="showPage('calendar')" style="color:var(--blue);font-weight:700">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>캘린더
   </button>
   <button class="aside-btn" id="mb-memo" onclick="showPage('memo')" style="color:var(--teal);font-weight:700">
     <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>업무일지
@@ -804,6 +841,56 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <div class="card"><div id="log-wrap"></div></div>
 </div>
 
+<!-- ══ CALENDAR ══ -->
+<div class="page" id="page-calendar">
+  <!-- 툴팁 -->
+  <div class="cal-tooltip" id="cal-tooltip"></div>
+  <div class="sh">
+    <div><div class="sh-title">📅 캘린더</div><div class="sh-sub">환자·간병인 스케줄 및 급여 지급일</div></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="btn btn-sm" onclick="shiftCalMonth(-1)" style="padding:6px 12px;font-size:16px">‹</button>
+      <span id="cal-title" style="font-size:16px;font-weight:900;min-width:100px;text-align:center"></span>
+      <button class="btn btn-sm" onclick="shiftCalMonth(1)" style="padding:6px 12px;font-size:16px">›</button>
+      <button class="btn btn-sm btn-teal" onclick="goCalToday()">오늘</button>
+    </div>
+  </div>
+
+  <!-- 범례 -->
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:.875rem;font-size:11px;font-weight:600">
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#E5F3F1;display:inline-block"></span>간병 시작</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#FCEAEA;display:inline-block"></span>간병 마감</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#FDF3E3;display:inline-block"></span>주급 지급</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:2px;background:#FFF3E0;display:inline-block"></span>예약이체</span>
+  </div>
+
+  <!-- 달력 -->
+  <div class="cal-wrap">
+    <!-- 요일 헤더 -->
+    <div class="cal-weekdays">
+      <div class="cal-weekday sun">일</div>
+      <div class="cal-weekday">월</div>
+      <div class="cal-weekday">화</div>
+      <div class="cal-weekday">수</div>
+      <div class="cal-weekday">목</div>
+      <div class="cal-weekday">금</div>
+      <div class="cal-weekday sat">토</div>
+    </div>
+    <!-- 날짜 그리드 -->
+    <div class="cal-body" id="cal-body"></div>
+  </div>
+
+  <!-- 날짜 클릭 상세 -->
+  <div id="cal-detail" style="display:none;margin-top:1rem">
+    <div class="card">
+      <div class="card-hd" style="justify-content:space-between">
+        <div><span class="dot"></span><span id="cal-detail-date"></span></div>
+        <button class="btn btn-sm" onclick="document.getElementById('cal-detail').style.display='none'">✕</button>
+      </div>
+      <div id="cal-detail-body"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MEMO ══ -->
 <div class="page" id="page-memo">
   <div class="sh">
@@ -825,7 +912,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <div class="card" style="margin-bottom:1rem">
         <div class="card-hd" style="justify-content:space-between">
           <div><span class="dot" style="background:var(--amber)"></span>📢 공지사항 / 알림</div>
-          <span style="font-size:11px;color:var(--gray)" id="notice-count"></span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:11px;color:var(--gray)" id="notice-count"></span>
+            <input type="month" id="notice-month" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)" onchange="renderNotices()">
+          </div>
         </div>
         <div id="notice-list"></div>
       </div>
@@ -898,14 +988,26 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
       <!-- 빠른 메모 -->
       <div class="card" style="margin-top:1rem">
-        <div class="card-hd"><span class="dot"></span>환자 빠른 메모</div>
-        <div class="field">
-          <select id="quick-memo-pt" onchange="loadQuickMemo()" style="font-size:13px">
+        <div class="card-hd"><span class="dot"></span>빠른 메모</div>
+
+        <!-- 환자 메모 -->
+        <div style="margin-bottom:1rem">
+          <label style="font-size:12px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">🏥 환자 메모</label>
+          <select id="quick-memo-pt" onchange="loadQuickMemo()" style="font-size:13px;width:100%;margin-bottom:6px">
             <option value="">— 환자 선택 —</option>
           </select>
+          <textarea id="quick-memo-content" rows="3" placeholder="이 환자에 대한 메모..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
+          <button class="btn btn-teal btn-sm" style="margin-top:6px" onclick="saveQuickMemo()">환자 메모 저장</button>
         </div>
-        <textarea id="quick-memo-content" rows="4" placeholder="이 환자에 대한 메모..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
-        <button class="btn btn-teal btn-sm" style="margin-top:8px" onclick="saveQuickMemo()">메모 저장</button>
+
+        <div style="border-top:1px solid var(--border);padding-top:1rem">
+          <label style="font-size:12px;font-weight:700;color:var(--gray);display:block;margin-bottom:6px">👤 간병인 메모</label>
+          <select id="quick-memo-cg" onchange="loadQuickMemoCg()" style="font-size:13px;width:100%;margin-bottom:6px">
+            <option value="">— 간병인 선택 —</option>
+          </select>
+          <textarea id="quick-memo-cg-content" rows="3" placeholder="이 간병인에 대한 메모..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans)"></textarea>
+          <button class="btn btn-teal btn-sm" style="margin-top:6px" onclick="saveQuickMemoCg()">간병인 메모 저장</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1668,7 +1770,7 @@ function showPage(name) {
   if(m) m.classList.add('act');
   const tt=document.getElementById('tt-'+name);
   if(tt) tt.classList.add('act');
-  const fns={dashboard:renderDashboard,patients:renderPatients,send:renderSend,caregiver:renderCaregivers,log:renderLog,settings:loadSettings,report:renderReport,members:renderMembers,memo:initMemoPage};
+  const fns={dashboard:renderDashboard,patients:renderPatients,send:renderSend,caregiver:renderCaregivers,log:renderLog,settings:loadSettings,report:renderReport,members:renderMembers,memo:initMemoPage,calendar:initCalendar};
   if(fns[name]) fns[name]();
   updateSidebar();
 }
@@ -4103,32 +4205,281 @@ function calcTotalPay(cg) {
   const total = payPerDay * days;
   return `${days}일 × ${payPerDay.toLocaleString()}원 = ${total.toLocaleString()}원`;
 }
-// ─── 공지사항/알림 ───
+// ─── 캘린더 ───
+let _calYear  = new Date().getFullYear();
+let _calMonth = new Date().getMonth(); // 0-indexed
+
+function showCalTip(e, el) {
+  const tip = document.getElementById('cal-tooltip');
+  if(!tip) return;
+  tip.textContent = el.dataset.tip || '';
+  tip.classList.add('show');
+  const rect = el.getBoundingClientRect();
+  let left = rect.left;
+  let top  = rect.bottom + 6;
+  if(left + 200 > window.innerWidth) left = window.innerWidth - 210;
+  if(top + 80 > window.innerHeight) top = rect.top - 80;
+  tip.style.left = left + 'px';
+  tip.style.top  = top  + 'px';
+}
+
+function hideCalTip() {
+  const tip = document.getElementById('cal-tooltip');
+  if(tip) tip.classList.remove('show');
+}
+
+function initCalendar() {
+  renderCalendar();
+}
+
+function shiftCalMonth(delta) {
+  _calMonth += delta;
+  if(_calMonth > 11) { _calMonth = 0;  _calYear++; }
+  if(_calMonth < 0)  { _calMonth = 11; _calYear--; }
+  renderCalendar();
+}
+
+function goCalToday() {
+  _calYear  = new Date().getFullYear();
+  _calMonth = new Date().getMonth();
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const DAYS = ['일','월','화','수','목','금','토'];
+  const today = todayStr();
+  const titleEl = document.getElementById('cal-title');
+  const bodyEl  = document.getElementById('cal-body');
+  if(!titleEl || !bodyEl) return;
+
+  titleEl.textContent = `${_calYear}년 ${_calMonth+1}월`;
+
+  // 이번 달 이벤트 수집
+  const events = {}; // { 'YYYY-MM-DD': [{type, label, color}] }
+
+  function addEvent(dateStr, type, label, tooltip='') {
+    if(!dateStr) return;
+    if(!events[dateStr]) events[dateStr] = [];
+    events[dateStr].push({ type, label, tooltip });
+  }
+
+  // ① 환자 시작일/마감일 (간병인 이름 포함)
+  patients.forEach(p => {
+    const cg = caregivers.find(c=>String(c.patientId)===String(p.id));
+    const cgName = cg ? cg.name : (p.caregiverName||'');
+    const tooltip = [
+      p.name,
+      p.hospital||'',
+      cgName ? `간병인: ${cgName}` : '',
+      p.startTime||''
+    ].filter(Boolean).join('\n');
+
+    if(p.startDate) addEvent(p.startDate, 'start', `▶ ${p.name}`, tooltip);
+
+    const endDate = p.endDate || (()=>{
+      if(!p.startDate||!p.duration) return '';
+      const days=parseDurationDays(p.duration); if(!days) return '';
+      const d=parseLocalDate(p.startDate); if(!d) return '';
+      d.setDate(d.getDate()+days); return toLocalDateStr(d);
+    })();
+    if(endDate) {
+      const endTooltip = [
+        p.name,
+        p.hospital||'',
+        cgName ? `간병인: ${cgName}` : '',
+        !p.endDate?'(예상마감)':''
+      ].filter(Boolean).join('\n');
+      addEvent(endDate, 'end', `■ ${p.name}${!p.endDate?'(예상)':''}`, endTooltip);
+    }
+  });
+
+  // ② 간병인 시작일/마감일
+  caregivers.forEach(c => {
+    const pt = c.patientId ? patients.find(p=>String(p.id)===String(c.patientId)) : null;
+    const tooltip = [c.name, pt?pt.name:'', pt?pt.hospital:''].filter(Boolean).join('\n');
+    if(c.startDate) addEvent(c.startDate, 'start', `▶ ${c.name}(간)`, tooltip);
+    if(c.endDate)   addEvent(c.endDate,   'end',   `■ ${c.name}(간)`, tooltip);
+  });
+
+  // ③ 급여 지급일
+  caregivers.filter(c=>c.startDate).forEach(cg => {
+    calcPayDates(cg).forEach(p => {
+      const tooltip = `${cg.name}\n${p.label}${p.isReserve?'\n[예약이체]':''}`;
+      if(p.isReserve) addEvent(p.date, 'pay-reserve', `💰 ${cg.name} ${p.label}[예약]`, tooltip);
+      else            addEvent(p.date, 'pay',          `💰 ${cg.name} ${p.label}`, tooltip);
+    });
+  });
+
+  // 달력 그리기
+  const firstDay = new Date(_calYear, _calMonth, 1).getDay(); // 0=일
+  const lastDate = new Date(_calYear, _calMonth+1, 0).getDate();
+  const prevLast = new Date(_calYear, _calMonth, 0).getDate();
+
+  let html = '';
+  const totalCells = Math.ceil((firstDay + lastDate) / 7) * 7;
+
+  for(let i = 0; i < totalCells; i++) {
+    let date, isThisMonth = true;
+    if(i < firstDay) {
+      date = prevLast - firstDay + i + 1;
+      isThisMonth = false;
+    } else if(i >= firstDay + lastDate) {
+      date = i - firstDay - lastDate + 1;
+      isThisMonth = false;
+    } else {
+      date = i - firstDay + 1;
+    }
+
+    const dateStr = isThisMonth
+      ? `${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(date).padStart(2,'0')}`
+      : '';
+    const isToday = dateStr === today;
+    const dow = i % 7; // 0=일, 6=토
+    const isSun = dow === 0, isSat = dow === 6;
+
+    const dayEvents = (dateStr && events[dateStr]) || [];
+    const evHTML = dayEvents.slice(0,3).map(e =>
+      `<div class="cal-event ${e.type}" data-tip="${(e.tooltip||e.label).replace(/"/g,'&quot;')}" onmouseenter="showCalTip(event,this)" onmouseleave="hideCalTip()">${e.label}</div>`
+    ).join('');
+    const moreHTML = dayEvents.length > 3
+      ? `<div class="cal-more">+${dayEvents.length-3}건 더</div>`
+      : '';
+
+    const cellClass = [
+      'cal-cell',
+      !isThisMonth ? 'other-month' : '',
+      isToday ? 'today' : '',
+      isSun ? 'sun-col' : '',
+      isSat ? 'sat-col' : ''
+    ].filter(Boolean).join(' ');
+
+    html += `<div class="${cellClass}" onclick="${dateStr?`showCalDetail('${dateStr}')`:''}" style="${!dateStr?'cursor:default':''}">
+      <div class="cal-date">${date}</div>
+      ${evHTML}${moreHTML}
+    </div>`;
+  }
+
+  bodyEl.innerHTML = html;
+}
+
+function showCalDetail(dateStr) {
+  const detailEl = document.getElementById('cal-detail');
+  const dateEl   = document.getElementById('cal-detail-date');
+  const bodyEl   = document.getElementById('cal-detail-body');
+  if(!detailEl || !dateEl || !bodyEl) return;
+
+  const DAYS = ['일','월','화','수','목','금','토'];
+  const d = parseLocalDate(dateStr);
+  const dayStr = d ? `(${DAYS[d.getDay()]}요일)` : '';
+  dateEl.textContent = `${dateStr} ${dayStr}`;
+
+  let html = '';
+
+  // 환자 이벤트
+  patients.forEach(p => {
+    if(p.startDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">
+      <div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병 시작</div>
+      <div style="font-size:13px;font-weight:700">${p.name} (${p.hospital||''})</div>
+      <div style="font-size:11px;color:var(--gray)">${p.startTime||''} ${p.duration?'· '+p.duration:''}</div>
+    </div>`;
+    const endDate = p.endDate || (()=>{
+      if(!p.startDate||!p.duration) return '';
+      const days=parseDurationDays(p.duration); if(!days) return '';
+      const dd=parseLocalDate(p.startDate); dd.setDate(dd.getDate()+days); return toLocalDateStr(dd);
+    })();
+    if(endDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">
+      <div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병 마감${!p.endDate?' (예상)':''}</div>
+      <div style="font-size:13px;font-weight:700">${p.name} (${p.hospital||''})</div>
+      <div style="font-size:11px;color:var(--gray)">${p.endTime||''}</div>
+    </div>`;
+  });
+
+  // 간병인 이벤트
+  caregivers.forEach(c => {
+    if(c.startDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--teal);margin-bottom:6px;background:var(--teal-lt);border-radius:0 var(--rsm) var(--rsm) 0">
+      <div style="font-size:12px;font-weight:700;color:var(--teal)">▶ 간병인 시작</div>
+      <div style="font-size:13px;font-weight:700">${c.name}</div>
+      <div style="font-size:11px;color:var(--gray)">${c.startTime||''}</div>
+    </div>`;
+    if(c.endDate === dateStr) html += `<div style="padding:8px;border-left:3px solid var(--red);margin-bottom:6px;background:var(--red-lt);border-radius:0 var(--rsm) var(--rsm) 0">
+      <div style="font-size:12px;font-weight:700;color:var(--red)">■ 간병인 마감</div>
+      <div style="font-size:13px;font-weight:700">${c.name}</div>
+      <div style="font-size:11px;color:var(--gray)">${c.endTime||''}</div>
+    </div>`;
+  });
+
+  // 급여 이벤트
+  caregivers.filter(c=>c.startDate).forEach(cg => {
+    calcPayDates(cg).forEach(p => {
+      if(p.date !== dateStr) return;
+      const bgColor = p.isReserve ? '#FFF3E0' : 'var(--amber-lt)';
+      const bdColor = p.isReserve ? '#E65100' : 'var(--amber)';
+      html += `<div style="padding:8px;border-left:3px solid ${bdColor};margin-bottom:6px;background:${bgColor};border-radius:0 var(--rsm) var(--rsm) 0">
+        <div style="font-size:12px;font-weight:700;color:${bdColor}">💰 ${p.label}${p.isReserve?' [예약이체]':''}</div>
+        <div style="font-size:13px;font-weight:700">${cg.name}</div>
+        ${p.isReserve?`<div style="font-size:11px;color:var(--gray)">마감일: ${p.payDate||p.endDate}</div>`:''}
+      </div>`;
+    });
+  });
+
+  if(!html) html = '<div style="padding:1rem;text-align:center;color:var(--gray);font-size:13px">이날 일정이 없어요</div>';
+  bodyEl.innerHTML = html;
+  detailEl.style.display = 'block';
+  detailEl.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
 let editNoticeId = null;
 
 function renderNotices() {
   const el = document.getElementById('notice-list');
   if(!el) return;
-  const list = [...notices].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,20);
+
+  // 월 필터
+  const monthEl = document.getElementById('notice-month');
+  const selMonth = monthEl ? monthEl.value : '';
+  let list = [...notices].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  if(selMonth) list = list.filter(n=>(n.createdAt||'').startsWith(selMonth));
+
   const countEl = document.getElementById('notice-count');
-  if(countEl) countEl.textContent = notices.length ? `${notices.length}건` : '';
+  if(countEl) countEl.textContent = list.length ? `${list.length}건` : '';
+
   if(!list.length) {
     el.innerHTML = '<div class="empty" style="padding:1rem 0"><p style="font-size:12px">공지사항이 없어요</p></div>';
     return;
   }
+
+  // 날짜별 그룹핑
+  const groups = {};
+  list.forEach(n => {
+    const d = n.createdAt || '날짜없음';
+    if(!groups[d]) groups[d] = [];
+    groups[d].push(n);
+  });
+
+  const DAYS = ['일','월','화','수','목','금','토'];
   const levelColor = { urgent:'#dc2626', important:'var(--amber)', normal:'var(--gray)', auto:'var(--teal)' };
   const levelLabel = { urgent:'🚨 긴급', important:'⚠️ 중요', normal:'📌', auto:'🔔 자동알림' };
-  el.innerHTML = list.map(n => `
-    <div style="border-left:3px solid ${levelColor[n.level||'normal']};padding:8px 10px;margin-bottom:8px;background:var(--surface2);border-radius:0 var(--rsm) var(--rsm) 0;cursor:pointer" onclick="${n.level==='auto'?'':` editNoticeEntry('${n.id}')`}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-        <span style="font-size:11px;font-weight:700;color:${levelColor[n.level||'normal']}">${levelLabel[n.level||'normal']}</span>
-        <span style="font-size:10px;color:var(--gray)">${n.createdAt||''}</span>
+
+  el.innerHTML = Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(date => {
+    const d = parseLocalDate(date);
+    const dayStr = d ? `(${DAYS[d.getDay()]}요일)` : '';
+    return `<div style="margin-bottom:1rem">
+      <div style="font-size:11px;font-weight:700;color:var(--amber);padding:6px 0;border-bottom:2px solid var(--amber-lt);margin-bottom:6px">
+        📅 ${date} ${dayStr}
       </div>
-      ${n.title?`<div style="font-size:13px;font-weight:700;margin-bottom:3px">${n.title}</div>`:''}
-      <div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.5">${(n.content||'').slice(0,100)}${(n.content||'').length>100?'...':''}</div>
-      ${n.level!=='auto'?`<button class="btn btn-sm" style="margin-top:6px;font-size:10px;color:var(--red);border-color:var(--red)" onclick="event.stopPropagation();deleteNoticeById('${n.id}')">삭제</button>`:''}
-    </div>
-  `).join('');
+      ${groups[date].map(n=>`
+        <div style="border-left:3px solid ${levelColor[n.level||'normal']};padding:8px 10px;margin-bottom:6px;background:var(--surface2);border-radius:0 var(--rsm) var(--rsm) 0;${n.level!=='auto'?'cursor:pointer':''}" ${n.level!=='auto'?`onclick="editNoticeEntry('${n.id}')"`:''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+            <span style="font-size:11px;font-weight:700;color:${levelColor[n.level||'normal']}">${levelLabel[n.level||'normal']}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              ${n.level!=='auto'?`<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--red);border-color:var(--red)" onclick="event.stopPropagation();deleteNoticeById('${n.id}')">삭제</button>`:''}
+            </div>
+          </div>
+          ${n.title?`<div style="font-size:13px;font-weight:700;margin-bottom:3px">${n.title}</div>`:''}
+          <div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.5">${(n.content||'').slice(0,120)}${(n.content||'').length>120?'...':''}</div>
+        </div>
+      `).join('')}
+    </div>`;
+  }).join('');
 }
 
 function addNoticeEntry() {
@@ -4404,16 +4755,41 @@ function saveQuickMemo() {
   toast(`✅ ${pt.name} 메모 저장됐어요`);
 }
 
+function loadQuickMemoCg() {
+  const cgId = document.getElementById('quick-memo-cg').value;
+  const cg = caregivers.find(c=>String(c.id)===String(cgId));
+  document.getElementById('quick-memo-cg-content').value = cg ? (cg.memo||'') : '';
+}
+
+function saveQuickMemoCg() {
+  const cgId = document.getElementById('quick-memo-cg').value;
+  if(!cgId) { toast('간병인을 선택해주세요', true); return; }
+  const cg = caregivers.find(c=>String(c.id)===String(cgId));
+  if(!cg) return;
+  cg.memo = document.getElementById('quick-memo-cg-content').value.trim();
+  save();
+  toast(`✅ ${cg.name} 메모 저장됐어요`);
+}
+
 function initMemoPage() {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
   const monthEl = document.getElementById('memo-month');
-  if(monthEl && !monthEl.value) {
-    const now = new Date();
-    monthEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  }
+  if(monthEl && !monthEl.value) monthEl.value = thisMonth;
+
+  const noticeMonthEl = document.getElementById('notice-month');
+  if(noticeMonthEl && !noticeMonthEl.value) noticeMonthEl.value = thisMonth;
+
   const ptSel = document.getElementById('quick-memo-pt');
   if(ptSel) {
     ptSel.innerHTML = '<option value="">— 환자 선택 —</option>' +
       patients.map(p=>`<option value="${p.id}">${p.name} (${p.hospital||''})</option>`).join('');
+  }
+  const cgSel = document.getElementById('quick-memo-cg');
+  if(cgSel) {
+    cgSel.innerHTML = '<option value="">— 간병인 선택 —</option>' +
+      caregivers.map(c=>`<option value="${c.id}">${c.name}${c.workStatus==='종료'?' (종료)':''}</option>`).join('');
   }
   renderNotices();
   renderMemo();
