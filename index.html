@@ -891,9 +891,11 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <div class="card" style="margin-bottom:1rem">
         <div class="card-hd" style="justify-content:space-between">
           <div><span class="dot" style="background:var(--amber)"></span>📢 공지사항 / 알림</div>
-          <div style="display:flex;align-items:center;gap:6px">
+          <div style="display:flex;align-items:center;gap:4px">
             <span style="font-size:11px;color:var(--gray)" id="notice-count"></span>
+            <button class="btn btn-sm" onclick="shiftNoticeDate(-1)" style="padding:3px 8px;font-size:14px">‹</button>
             <input type="date" id="notice-date" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)" onchange="renderNotices()">
+            <button class="btn btn-sm" onclick="shiftNoticeDate(1)" style="padding:3px 8px;font-size:14px">›</button>
             <button class="btn btn-sm" onclick="document.getElementById('notice-date').value='';renderNotices()" style="font-size:10px;padding:3px 7px">전체</button>
           </div>
         </div>
@@ -1148,6 +1150,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       </button>
       <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="fixEarlyEndData()">
         🔧 중도종료 데이터 복구
+      </button>
+      <button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="deduplicateNotices()">
+        🧹 중복 알림 정리
       </button>
       <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="checkPayRemind(true)">
         💰 급여 알림 테스트
@@ -4351,6 +4356,52 @@ function showCalDetail(dateStr) {
 
 let editNoticeId = null;
 
+function toggleNoticeDateMore(date, btn) {
+  var more = document.getElementById('notice-more-' + date);
+  if(!more) return;
+  var isOpen = more.style.display !== 'none';
+  more.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = isOpen ? '+ ' + more.children.length + '건 더 보기' : '▲ 접기';
+}
+
+function toggleNoticeOldDates(btn) {
+  var old = document.getElementById('notice-old-dates');
+  if(!old) return;
+  var isOpen = old.style.display !== 'none';
+  old.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = isOpen ? btn.textContent.replace('▲ 접기', '+ N일치 더 보기') : '▲ 접기';
+}
+
+function shiftNoticeDate(delta) {
+  const el = document.getElementById('notice-date');
+  if(!el) return;
+  const d = parseLocalDate(el.value || todayStr());
+  if(!d) return;
+  d.setDate(d.getDate() + delta);
+  el.value = toLocalDateStr(d);
+  renderNotices();
+}
+
+// 중복 알림 정리 - 날짜+내용 기준으로 중복 제거, 각 날짜별 1건만 유지
+function deduplicateNotices() {
+  const seen = new Set();
+  const before = notices.length;
+  notices = notices.filter(function(n) {
+    const key = (n.createdAt||'') + '|' + (n.content||'') + '|' + (n.type||'');
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const removed = before - notices.length;
+  if(removed > 0) {
+    save();
+    renderNotices();
+    toast('✅ 중복 알림 ' + removed + '건 정리됐어요');
+  } else {
+    toast('중복 알림이 없어요');
+  }
+}
+
 function renderNotices() {
   var el = document.getElementById('notice-list');
   if(!el) return;
@@ -4358,16 +4409,17 @@ function renderNotices() {
   var dateEl = document.getElementById('notice-date');
   var selDate = dateEl ? dateEl.value : '';
   var list = notices.slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
-  if(selDate) list = list.filter(function(n){ return (n.createdAt||'').startsWith(selDate); });
+  if(selDate) list = list.filter(function(n){ return (n.createdAt||'') === selDate; });
 
   var countEl = document.getElementById('notice-count');
   if(countEl) countEl.textContent = list.length ? list.length+'건' : '';
 
   if(!list.length) {
-    el.innerHTML = '<div class="empty" style="padding:1rem 0"><p style="font-size:12px">공지사항이 없어요</p></div>';
+    el.innerHTML = '<div class="empty" style="padding:1rem 0"><p style="font-size:12px">' + (selDate ? selDate+' 알림 없음' : '공지사항이 없어요') + '</p></div>';
     return;
   }
 
+  var DAYS = ['일','월','화','수','목','금','토'];
   var levelColor = { urgent:'#dc2626', important:'var(--amber)', normal:'var(--gray)', auto:'var(--teal)' };
   var levelLabel = { urgent:'🚨 긴급', important:'⚠️ 중요', normal:'📌', auto:'🔔 자동알림' };
 
@@ -4376,41 +4428,65 @@ function renderNotices() {
     var label = levelLabel[n.level||'normal'];
     var isAuto = n.level === 'auto';
     var clickAttr = isAuto ? '' : 'onclick="editNoticeEntry(\'' + n.id + '\')" style="cursor:pointer"';
-    var delBtn = isAuto ? '' : '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--red);border-color:var(--red);margin-top:4px" onclick="event.stopPropagation();deleteNoticeById(\'' + n.id + '\')">삭제</button>';
-    var content = (n.content||'').slice(0,120) + ((n.content||'').length>120?'...':'');
+    var delBtn = '<button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--red);border-color:var(--red);margin-top:4px" onclick="event.stopPropagation();deleteNoticeById(\'' + n.id + '\')">삭제</button>';
+    var content = (n.content||'').slice(0,150) + ((n.content||'').length>150?'...':'');
     return '<div style="border-left:3px solid ' + color + ';padding:8px 10px;margin-bottom:6px;background:var(--surface2);border-radius:0 var(--rsm) var(--rsm) 0" ' + clickAttr + '>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">'
       + '<span style="font-size:11px;font-weight:700;color:' + color + '">' + label + '</span>'
-      + '<span style="font-size:10px;color:var(--gray)">' + (n.createdAt||'') + '</span>'
+      + delBtn
       + '</div>'
       + (n.title ? '<div style="font-size:13px;font-weight:700;margin-bottom:2px">' + n.title + '</div>' : '')
       + '<div style="font-size:12px;color:var(--gray);white-space:pre-wrap;line-height:1.5">' + content + '</div>'
-      + delBtn + '</div>';
+      + '</div>';
   }
 
-  var SHOW = 2;
-  var shown  = list.slice(0, SHOW);
-  var hidden = list.slice(SHOW);
-  var html = '';
-  shown.forEach(function(n){ html += renderItem(n); });
-
-  if(hidden.length > 0) {
-    html += '<div id="notice-hidden" style="display:none">';
-    hidden.forEach(function(n){ html += renderItem(n); });
-    html += '</div>';
-    html += '<button class="btn btn-sm" id="notice-more-btn" style="width:100%;justify-content:center;margin-top:4px;font-size:12px;color:var(--teal);border-color:var(--teal)" onclick="toggleNoticeMore()">+ ' + hidden.length + '건 더 보기</button>';
+  // 날짜별 그룹핑 (전체 보기일 때)
+  if(!selDate) {
+    var groups = {};
+    list.forEach(function(n){
+      var d = n.createdAt || '날짜없음';
+      if(!groups[d]) groups[d] = [];
+      groups[d].push(n);
+    });
+    var dates = Object.keys(groups).sort(function(a,b){ return b.localeCompare(a); });
+    var SHOW_DATES = 3; // 기본 최근 3일치 표시
+    var shownDates = dates.slice(0, SHOW_DATES);
+    var hiddenDates = dates.slice(SHOW_DATES);
+    var html = '';
+    shownDates.forEach(function(date) {
+      var d = parseLocalDate(date);
+      var dayStr = d ? ' (' + DAYS[d.getDay()] + ')' : '';
+      html += '<div style="margin-bottom:8px">'
+        + '<div style="font-size:11px;font-weight:700;color:var(--amber);padding:4px 0;border-bottom:1px solid var(--amber-lt);margin-bottom:6px">📅 ' + date + dayStr + '</div>';
+      var SHOW = 2;
+      groups[date].slice(0, SHOW).forEach(function(n){ html += renderItem(n); });
+      if(groups[date].length > SHOW) {
+        html += '<div id="notice-more-'+date+'" style="display:none">';
+        groups[date].slice(SHOW).forEach(function(n){ html += renderItem(n); });
+        html += '</div><button class="btn btn-sm" style="width:100%;font-size:11px;color:var(--teal);border-color:var(--teal);margin-bottom:4px" onclick="toggleNoticeDateMore(\'' + date + '\', this)">+ ' + (groups[date].length-SHOW) + '건 더 보기</button>';
+      }
+      html += '</div>';
+    });
+    if(hiddenDates.length > 0) {
+      html += '<div id="notice-old-dates" style="display:none">';
+      hiddenDates.forEach(function(date) {
+        var d = parseLocalDate(date);
+        var dayStr = d ? ' (' + DAYS[d.getDay()] + ')' : '';
+        html += '<div style="margin-bottom:8px">'
+          + '<div style="font-size:11px;font-weight:700;color:var(--amber);padding:4px 0;border-bottom:1px solid var(--amber-lt);margin-bottom:6px">📅 ' + date + dayStr + '</div>';
+        groups[date].forEach(function(n){ html += renderItem(n); });
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '<button class="btn btn-sm" id="notice-old-btn" style="width:100%;font-size:11px;color:var(--gray);border-color:var(--border);margin-top:4px" onclick="toggleNoticeOldDates(this)">+ ' + hiddenDates.length + '일치 더 보기</button>';
+    }
+    el.innerHTML = html;
+  } else {
+    // 특정 날짜 선택 시 - 전부 표시
+    var html = '';
+    list.forEach(function(n){ html += renderItem(n); });
+    el.innerHTML = html;
   }
-
-  el.innerHTML = html;
-}
-
-function toggleNoticeMore() {
-  var hidden = document.getElementById('notice-hidden');
-  var btn    = document.getElementById('notice-more-btn');
-  if(!hidden || !btn) return;
-  var isOpen = hidden.style.display !== 'none';
-  hidden.style.display = isOpen ? 'none' : 'block';
-  btn.textContent = isOpen ? '+ ' + hidden.children.length + '건 더 보기' : '▲ 접기';
 }
 
 function addNoticeEntry() {
