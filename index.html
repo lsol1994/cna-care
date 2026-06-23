@@ -2471,6 +2471,19 @@ function openEndPatientModal(id) {
   document.getElementById('pt-overlay').classList.add('open');
 }
 
+// 실제 종료일 기준 duration 재계산
+function recalcDuration(p, actualEndDate) {
+  if(!p.startDate || !actualEndDate) return;
+  const start = parseLocalDate(p.startDate);
+  const end   = parseLocalDate(actualEndDate);
+  if(!start || !end) return;
+  const days = Math.round((end - start) / 86400000);
+  if(days >= 0) {
+    p.duration = days + '일';
+    p.endDate  = actualEndDate;
+  }
+}
+
 function confirmEndPatient(id) {
   const endDateEl   = document.getElementById('end-date');
   const endTimeEl   = document.getElementById('end-time');
@@ -2494,17 +2507,21 @@ function confirmEndPatient(id) {
   p.endTime   = endTime;
   if(endReason) p.endReason = endReason;
 
+  // 실제 종료일로 duration 재계산 (예: 7일 예정 → 실제 4일 종료 → 4일로 변경)
+  recalcDuration(p, endDate);
+
   // 연결된 간병인도 종료 (실제 종료일로 업데이트)
   const cg = caregivers.find(c=>String(c.patientId)===String(id));
   if(cg && cg.workStatus !== '종료') {
     cg.workStatus = '종료';
-    cg.endDate = endDate; // 실제 종료일로 덮어씀
+    cg.endDate = endDate;
     cg.endTime = endTime || cg.endTime || '';
+    recalcDuration(cg, endDate); // 간병인 duration도 재계산
   } else if(cg) {
-    // 이미 종료됐어도 실제 종료일이 다르면 업데이트
     if(endDate && cg.endDate !== endDate) {
       cg.endDate = endDate;
       cg.endTime = endTime || cg.endTime || '';
+      recalcDuration(cg, endDate);
     }
   }
 
@@ -3366,14 +3383,23 @@ function confirmEarlyTerminate(cgId) {
       pt.endTime       = endTime;
       pt.caregiverName = '';
       if(reason) pt.endReason = reason;
+      recalcDuration(pt, endDate); // 실제 종료일로 duration 재계산
       sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate, caregiverName:'', status:'종료'});
     } else {
-      // 재모집: 환자 모집중 복귀 + 실제 중도종료일로 마감일 업데이트
+      // 재모집: 환자 모집중 복귀 + duration만 재계산 (endDate는 비워서 새 간병인 매칭 대비)
+      const actualDays = (() => {
+        if(!pt.startDate || !endDate) return null;
+        const s = parseLocalDate(pt.startDate);
+        const e = parseLocalDate(endDate);
+        if(!s||!e) return null;
+        return Math.round((e-s)/86400000);
+      })();
       pt.status           = '모집중';
       pt.recruited        = false;
       pt.caregiverName    = '';
-      pt.endDate          = endDate;   // ← 중도종료일로 마감일 업데이트
-      pt.endTime          = endTime;
+      pt.endDate          = '';   // 새 간병인 매칭 위해 비움
+      pt.endTime          = '';
+      if(actualDays !== null && actualDays >= 0) pt.duration = actualDays + '일';
       pt.recruitStartDate = endDate;
       if(!pt.recruitHistory) pt.recruitHistory = [];
       pt.recruitHistory.push({
@@ -3383,6 +3409,9 @@ function confirmEarlyTerminate(cgId) {
       sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate, caregiverName:'', status:'모집중'});
     }
   }
+
+  // 간병인 duration도 재계산
+  recalcDuration(cg, endDate);
 
   save();
   closeOverlay('cg-overlay');
@@ -4830,7 +4859,7 @@ function initMemoPage() {
   if(monthEl && !monthEl.value) monthEl.value = thisMonth;
 
   const noticeMonthEl = document.getElementById('notice-date');
-  if(noticeMonthEl && !noticeMonthEl.value) noticeMonthEl.value = thisMonth.slice(0,10) || todayStr();
+  if(noticeMonthEl) noticeMonthEl.value = todayStr();
 
   const ptSel = document.getElementById('quick-memo-pt');
   if(ptSel) {
