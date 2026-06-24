@@ -647,6 +647,22 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         </div>
         <button class="btn btn-sm" onclick="resetSendPreview()" style="font-size:11px">원본으로 복원</button>
       </div>
+      <!-- 시작일/기간 빠른 수정 -->
+      <div id="send-quick-edit" style="display:flex;gap:8px;margin-bottom:.75rem;padding:8px 10px;background:var(--surface2);border-radius:var(--rsm);flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:110px">
+          <div style="font-size:10px;color:var(--gray);font-weight:600;margin-bottom:3px">📅 시작일</div>
+          <input type="date" id="post-startDate-quick" style="width:100%;font-size:12px;padding:5px 7px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)">
+        </div>
+        <div style="flex:1;min-width:80px">
+          <div style="font-size:10px;color:var(--gray);font-weight:600;margin-bottom:3px">⏰ 시작시간</div>
+          <input type="time" id="post-startTime-quick" style="width:100%;font-size:12px;padding:5px 7px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)">
+        </div>
+        <div style="flex:1;min-width:70px">
+          <div style="font-size:10px;color:var(--gray);font-weight:600;margin-bottom:3px">📆 기간</div>
+          <input type="text" id="post-duration-quick" placeholder="예: 3일" style="width:100%;font-size:12px;padding:5px 7px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)">
+        </div>
+        <button class="btn btn-teal btn-sm" onclick="applyQuickEdit()" style="white-space:nowrap;align-self:flex-end">공고 반영</button>
+      </div>
       <textarea id="send-preview" oninput="updateSendEditLabel()" style="width:100%;min-height:300px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--rsm);padding:.875rem 1rem;font-size:13px;line-height:1.95;font-family:var(--sans);color:var(--black);resize:vertical"></textarea>
       <div style="display:flex;gap:8px;margin-top:.875rem">
         <button class="copy-btn" style="margin:0;flex:1" onclick="copySendText()">
@@ -1767,47 +1783,28 @@ function closeOverlay(id, e) {
 
 // ─── BUILD POST TEXT ───
 // ─── 재모집 공고 생성 ───
+// 기본공고 → 수정본 → 수정본에서 시작일/기간만 재모집 값으로 교체
 function buildRecruitPost(p) {
   const ri = p.recruitInfo;
-  if(!ri) return buildPost(p);
+  if(!ri) return p._editedPost || buildPost(p);
 
-  const rawPay = p.pay ? Math.max(0, Number(p.pay) - 5000) : null;
-  const pay = rawPay !== null ? rawPay.toLocaleString()+'원' : '협의';
+  // 베이스: 수정본 있으면 수정본, 없으면 기본 공고
+  let text = p._editedPost || buildPost(p);
 
-  const cgGender    = p.cgGender || '';
-  const titleGender = cgGender ? cgGender+' ' : '';
+  // 시작일 라인 교체
+  if(ri.startDate) {
+    const dayLabel = getDayLabel(ri.startDate);
+    const timeStr  = ri.startTime ? ' '+ri.startTime : '';
+    const newLine  = '📅 간병시작일 : '+ri.startDate+(dayLabel?' ('+dayLabel+')':'')+timeStr;
+    text = text.replace(/📅 간병시작일 : .*/,  newLine);
+  }
 
-  const stateParts = [p.diagnosis];
-  if(p.surgery && p.surgery !== '') stateParts.push(p.surgery);
-  if(p.diaper) stateParts.push('기저귀 착용');
-  if(p.move)   stateParts.push('거동 가능');
-  else          stateParts.push('거동 불가');
-  const state = stateParts.filter(Boolean).join(' / ');
+  // 기간 라인 교체
+  if(ri.duration) {
+    text = text.replace(/📆 기간 : .*/, '📆 기간 : '+ri.duration);
+  }
 
-  const ageWeight = [
-    p.gender||'',
-    p.age ? p.age+'세' : '',
-    p.weight ? p.weight+'kg' : ''
-  ].filter(Boolean).join(' / ');
-
-  const startDateStr  = ri.startDate || '';
-  const startTimeStr  = ri.startTime || '';
-  const endDateStr    = ri.endDate   || '';
-  const durationStr   = ri.duration  || '미정';
-  const startDayLabel = getDayLabel(startDateStr);
-  const endDayLabel   = getDayLabel(endDateStr);
-
-  return '🚨[구인]🚨'+titleGender+'간병인 선생님 구합니다 🙏\n\n'
-    +'🏥 병원위치 : '+(p.hospital||'—')+'\n'
-    +'📅 재모집시작 : '+startDateStr+(startDayLabel?' ('+startDayLabel+')':'')+' '+startTimeStr+'\n'
-    +'📅 서비스마감 : '+endDateStr+(endDayLabel?' ('+endDayLabel+')':'')+'\n'
-    +'👤 환자분 : '+(ageWeight||p.gender||'')+(state?' / '+state:'')+'\n'
-    +'💰 가격 : '+pay+' / 식사없음\n'
-    +'📆 남은기간 : '+durationStr+'\n'
-    +(p.request ? '📌 요청사항 : '+p.request+'\n' : '')
-    +'🚩협회비 없음 / 배상책임보험 가입 지원\n\n'
-    +(cfg.name||'씨앤에이케어간병협회')+'\n'
-    +'📞 '+(formatPhone(cfg.phone)||'전화번호를 설정에서 입력해주세요');
+  return text;
 }
 
 function buildPost(p) {
@@ -2655,11 +2652,27 @@ function selectSendPt(id) {
   selPt = patients.find(x=>String(x.id)===String(id));
   const card = document.getElementById('send-preview-card');
   if(selPt) {
-    const preview = document.getElementById('send-preview');
-    // 재모집 환자는 재모집 공고 우선, 수정본 있으면 수정본 우선
-    const basePost = selPt.recruitInfo ? buildRecruitPost(selPt) : buildPost(selPt);
-    preview.value = selPt._editedPost || basePost;
+    const preview  = document.getElementById('send-preview');
+    const basePost = getBasePost(selPt);
+
+    // 기존 수정본이 현재 원본(재모집/일반)과 너무 다르면 무시하고 원본 사용
+    // (재모집 공고로 바뀐 경우 이전 수정본이 남아있으면 혼란)
+    const edited = selPt._editedPost;
+    if(edited && edited.includes('[구인]') && basePost.includes('[구인]')) {
+      // 둘 다 구인 공고면 수정본 유지
+      preview.value = edited;
+    } else if(edited && edited === buildPost(selPt) && selPt.recruitInfo) {
+      // 이전에 일반 공고로 수정본 저장됐는데 지금은 재모집 → 원본으로 교체
+      preview.value = basePost;
+      delete selPt._editedPost;
+      const idx = patients.findIndex(p=>String(p.id)===String(selPt.id));
+      if(idx>-1) delete patients[idx]._editedPost;
+    } else {
+      preview.value = edited || basePost;
+    }
+
     updateSendEditLabel();
+    fillQuickEditFields(selPt);
     card.style.display = '';
   } else {
     card.style.display = 'none';
@@ -2668,11 +2681,61 @@ function selectSendPt(id) {
   renderRooms();
 }
 
+// 공고 시작일/기간 빠른 수정 → 미리보기 텍스트 자동 반영
+function applyQuickEdit() {
+  if(!selPt) return;
+  const newDate     = document.getElementById('post-startDate-quick').value;
+  const newTime     = document.getElementById('post-startTime-quick').value;
+  const newDuration = document.getElementById('post-duration-quick').value.trim();
+  const preview     = document.getElementById('send-preview');
+  let text = preview.value;
+
+  // 간병시작일 라인 교체
+  if(newDate) {
+    const dayLabel = getDayLabel(newDate);
+    const timeStr  = newTime ? ' '+newTime : '';
+    const newLine  = '📅 간병시작일 : '+newDate+(dayLabel?' ('+dayLabel+')':'')+timeStr;
+    text = text.replace(/📅 간병시작일 : .*/, newLine);
+  }
+
+  // 기간 라인 교체
+  if(newDuration) {
+    text = text.replace(/📆 기간 : .*/, '📆 기간 : '+newDuration);
+  }
+
+  preview.value = text;
+  updateSendEditLabel();
+  toast('✅ 공고에 반영됐어요');
+}
+
+function fillQuickEditFields(p) {
+  const ri         = p && p.recruitInfo;
+  const dateEl     = document.getElementById('post-startDate-quick');
+  const timeEl     = document.getElementById('post-startTime-quick');
+  const durationEl = document.getElementById('post-duration-quick');
+  if(!dateEl) return;
+  if(ri) {
+    // 재모집: recruitInfo 기준
+    dateEl.value     = ri.startDate || '';
+    timeEl.value     = ri.startTime || '';
+    durationEl.value = ri.duration  || '';
+  } else {
+    // 일반: 환자 시작일/기간
+    dateEl.value     = p.recruitStartDate || p.startDate || '';
+    timeEl.value     = p.startTime || '';
+    durationEl.value = p.duration  || '';
+  }
+}
+
+function getBasePost(p) {
+  return (p && p.recruitInfo) ? buildRecruitPost(p) : buildPost(p);
+}
+
 function updateSendEditLabel() {
   const lbl = document.getElementById('send-edit-label');
   if(!lbl || !selPt) return;
-  const preview = document.getElementById('send-preview');
-  const original = buildPost(selPt);
+  const preview  = document.getElementById('send-preview');
+  const original = getBasePost(selPt);
   const isEdited = preview.value !== original;
   if(isEdited) {
     lbl.textContent = '✏️ 수정본 사용 중';
@@ -2683,22 +2746,19 @@ function updateSendEditLabel() {
   }
 }
 
-
 function saveSendEdit() {
   if(!selPt) return;
   selPt._editedPost = document.getElementById('send-preview').value;
-  // 환자 배열에서 해당 환자 찾아서 수정본 저장
   const idx = patients.findIndex(p=>String(p.id)===String(selPt.id));
   if(idx>-1) patients[idx]._editedPost = selPt._editedPost;
-  save(); // Firebase + localStorage에 영구 저장
+  save();
   updateSendEditLabel();
   toast('✅ 수정본 저장됐어요. 새로고침 후에도 유지됩니다.');
 }
 
 function resetSendPreview() {
   if(!selPt) return;
-  document.getElementById('send-preview').value = buildPost(selPt);
-  // 수정본 삭제
+  document.getElementById('send-preview').value = getBasePost(selPt);
   delete selPt._editedPost;
   const idx = patients.findIndex(p=>String(p.id)===String(selPt.id));
   if(idx>-1) delete patients[idx]._editedPost;
