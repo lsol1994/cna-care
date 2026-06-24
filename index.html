@@ -1766,6 +1766,50 @@ function closeOverlay(id, e) {
 }
 
 // ─── BUILD POST TEXT ───
+// ─── 재모집 공고 생성 ───
+function buildRecruitPost(p) {
+  const ri = p.recruitInfo;
+  if(!ri) return buildPost(p);
+
+  const rawPay = p.pay ? Math.max(0, Number(p.pay) - 5000) : null;
+  const pay = rawPay !== null ? rawPay.toLocaleString()+'원' : '협의';
+
+  const cgGender    = p.cgGender || '';
+  const titleGender = cgGender ? cgGender+' ' : '';
+
+  const stateParts = [p.diagnosis];
+  if(p.surgery && p.surgery !== '') stateParts.push(p.surgery);
+  if(p.diaper) stateParts.push('기저귀 착용');
+  if(p.move)   stateParts.push('거동 가능');
+  else          stateParts.push('거동 불가');
+  const state = stateParts.filter(Boolean).join(' / ');
+
+  const ageWeight = [
+    p.gender||'',
+    p.age ? p.age+'세' : '',
+    p.weight ? p.weight+'kg' : ''
+  ].filter(Boolean).join(' / ');
+
+  const startDateStr  = ri.startDate || '';
+  const startTimeStr  = ri.startTime || '';
+  const endDateStr    = ri.endDate   || '';
+  const durationStr   = ri.duration  || '미정';
+  const startDayLabel = getDayLabel(startDateStr);
+  const endDayLabel   = getDayLabel(endDateStr);
+
+  return '🚨[구인]🚨'+titleGender+'간병인 선생님 구합니다 🙏\n\n'
+    +'🏥 병원위치 : '+(p.hospital||'—')+'\n'
+    +'📅 재모집시작 : '+startDateStr+(startDayLabel?' ('+startDayLabel+')':'')+' '+startTimeStr+'\n'
+    +'📅 서비스마감 : '+endDateStr+(endDayLabel?' ('+endDayLabel+')':'')+'\n'
+    +'👤 환자분 : '+(ageWeight||p.gender||'')+(state?' / '+state:'')+'\n'
+    +'💰 가격 : '+pay+' / 식사없음\n'
+    +'📆 남은기간 : '+durationStr+'\n'
+    +(p.request ? '📌 요청사항 : '+p.request+'\n' : '')
+    +'🚩협회비 없음 / 배상책임보험 가입 지원\n\n'
+    +(cfg.name||'씨앤에이케어간병협회')+'\n'
+    +'📞 '+(formatPhone(cfg.phone)||'전화번호를 설정에서 입력해주세요');
+}
+
 function buildPost(p) {
   // 공고 가격: 환자 일급 - 5,000원
   const rawPay = p.pay ? Math.max(0, Number(p.pay) - 5000) : null;
@@ -2558,17 +2602,52 @@ function deletePatient(id) {
 
 // ─── SEND PAGE ───
 function renderSend() {
-  const active=patients.filter(p=>p.status!=='종료'&&p.status!=='매칭완료'&&!p.recruited);
-  const el=document.getElementById('send-pt-list');
-  if(!active.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><p>모집중인 환자가 없어요</p></div>';return;}
-  el.innerHTML=active.map(p=>`
-    <div class="pt-row ${selPt&&selPt.id===p.id?'':''}  " style="cursor:pointer;${selPt&&selPt.id===p.id?'border-color:var(--teal);box-shadow:0 0 0 3px rgba(11,122,110,.1)':''}" onclick="selectSendPt('${p.id}')">
-      <div class="pt-top">
-        <div><div class="pt-name">${p.name}<span>${p.age||''}세 ${p.gender}</span></div>
-          <div style="font-size:11px;color:var(--gray)">${p.hospital}</div></div>
-        ${stBadge(p.status)}
-      </div>
-    </div>`).join('');
+  const active   = patients.filter(p=>p.status==='모집중'&&!p.recruitInfo);
+  const recruit  = patients.filter(p=>p.status==='모집중'&&p.recruitInfo);
+  const el = document.getElementById('send-pt-list');
+
+  let html = '';
+
+  // 재모집 환자 섹션
+  if(recruit.length > 0) {
+    html += '<div style="font-size:11px;font-weight:700;color:var(--amber);padding:6px 0 4px;border-bottom:2px solid var(--amber-lt);margin-bottom:8px">🔄 재모집</div>';
+    html += recruit.map(p=>`
+      <div class="pt-row" style="cursor:pointer;${selPt&&selPt.id===p.id?'border-color:var(--teal);box-shadow:0 0 0 3px rgba(11,122,110,.1)':''}" onclick="selectSendPt('${p.id}')">
+        <div class="pt-top">
+          <div>
+            <div class="pt-name">${p.name}<span>${p.age||''}세 ${p.gender}</span></div>
+            <div style="font-size:11px;color:var(--gray)">${p.hospital}</div>
+            ${p.recruitInfo?`<div style="font-size:10px;color:var(--amber);margin-top:2px">🔄 ${p.recruitInfo.startDate} ~ ${p.recruitInfo.endDate||'—'} (${p.recruitInfo.duration||'?'})</div>`:''}
+          </div>
+          <div style="display:flex;gap:4px;align-items:center">
+            ${stBadge(p.status)}
+            <span class="badge b-amber" style="font-size:10px">재모집</span>
+          </div>
+        </div>
+      </div>`).join('');
+    html += '<div style="margin-bottom:1rem"></div>';
+  }
+
+  // 일반 모집중 환자 섹션
+  if(active.length > 0) {
+    if(recruit.length > 0) html += '<div style="font-size:11px;font-weight:700;color:var(--gray);padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:8px">📋 신규 모집</div>';
+    html += active.map(p=>`
+      <div class="pt-row" style="cursor:pointer;${selPt&&selPt.id===p.id?'border-color:var(--teal);box-shadow:0 0 0 3px rgba(11,122,110,.1)':''}" onclick="selectSendPt('${p.id}')">
+        <div class="pt-top">
+          <div><div class="pt-name">${p.name}<span>${p.age||''}세 ${p.gender}</span></div>
+            <div style="font-size:11px;color:var(--gray)">${p.hospital}</div></div>
+          <div style="display:flex;gap:4px;align-items:center">
+            ${stBadge(p.status)}
+          </div>
+        </div>
+      </div>`).join('');
+  }
+
+  if(!active.length && !recruit.length) {
+    html = '<div class="empty"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><p>모집중인 환자가 없어요</p></div>';
+  }
+
+  el.innerHTML = html;
   renderRooms();
 }
 
@@ -2577,15 +2656,16 @@ function selectSendPt(id) {
   const card = document.getElementById('send-preview-card');
   if(selPt) {
     const preview = document.getElementById('send-preview');
-    // patients 배열에 저장된 수정본 우선 사용
-    preview.value = selPt._editedPost || buildPost(selPt);
+    // 재모집 환자는 재모집 공고 우선, 수정본 있으면 수정본 우선
+    const basePost = selPt.recruitInfo ? buildRecruitPost(selPt) : buildPost(selPt);
+    preview.value = selPt._editedPost || basePost;
     updateSendEditLabel();
     card.style.display = '';
   } else {
     card.style.display = 'none';
   }
   renderSend();
-  renderRooms(); // 환자 선택 시 단톡방별 발송 횟수 갱신
+  renderRooms();
 }
 
 function updateSendEditLabel() {
@@ -3386,20 +3466,43 @@ function confirmEarlyTerminate(cgId) {
       recalcDuration(pt, endDate); // 실제 종료일로 duration 재계산
       sendSheets({type:'updatePatient', name:pt.name, startDate:pt.startDate, caregiverName:'', status:'종료'});
     } else {
-      // 재모집: 환자 모집중 복귀 + duration만 재계산 (endDate는 비워서 새 간병인 매칭 대비)
-      const actualDays = (() => {
-        if(!pt.startDate || !endDate) return null;
-        const s = parseLocalDate(pt.startDate);
-        const e = parseLocalDate(endDate);
-        if(!s||!e) return null;
-        return Math.round((e-s)/86400000);
+      // 재모집: 환자 모집중 복귀
+      // 원래 마감일 보존 (중도종료 전)
+      const origEndDate = pt.endDate || (()=>{
+        if(!pt.startDate || !pt.duration) return '';
+        const days = parseDurationDays(pt.duration);
+        if(!days) return '';
+        const d = parseLocalDate(pt.startDate);
+        if(!d) return '';
+        d.setDate(d.getDate()+days);
+        return toLocalDateStr(d);
       })();
+
+      // 재모집 기간 자동 계산 (원래 마감일 - 중도종료일)
+      let recruitDays = '';
+      if(origEndDate && endDate) {
+        const eOrig = parseLocalDate(origEndDate);
+        const eTerm = parseLocalDate(endDate);
+        if(eOrig && eTerm) {
+          const diff = Math.round((eOrig - eTerm) / 86400000);
+          if(diff > 0) recruitDays = diff + '일';
+        }
+      }
+
+      // 재모집 정보 저장 (공고용)
+      pt.recruitInfo = {
+        startDate: endDate,
+        startTime: endTime || cg.endTime || '',
+        endDate:   origEndDate,
+        duration:  recruitDays,
+        reason:    reason || ''
+      };
+
       pt.status           = '모집중';
       pt.recruited        = false;
       pt.caregiverName    = '';
-      pt.endDate          = '';   // 새 간병인 매칭 위해 비움
+      pt.endDate          = '';
       pt.endTime          = '';
-      if(actualDays !== null && actualDays >= 0) pt.duration = actualDays + '일';
       pt.recruitStartDate = endDate;
       if(!pt.recruitHistory) pt.recruitHistory = [];
       pt.recruitHistory.push({
