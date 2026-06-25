@@ -1056,6 +1056,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
           <option value="0">끄기</option>
         </select>
       </div>
+      <div class="field">
+        <label>배상보험 기본 정보 <span style="font-size:10px;color:var(--gray);font-weight:400">(간병인 보험 가입 시 자동입력)</span></label>
+        <input type="text" id="cfg-insurance-memo" placeholder="예: KB2025개인간병인배상책임보험(3천)/2025-3561946-1">
+      </div>
     </div>
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;font-weight:500;letter-spacing:0;cursor:pointer">
@@ -2060,6 +2064,7 @@ function ptRowHTML(p) {
     <div class="pt-meta">
       <span>🏥 <b>${p.hospital}</b>${p.room?` <span style="color:var(--gray);font-weight:400">(${p.room})</span>`:''}</span>
       <span>💊 ${p.diagnosis}</span>
+      ${p.contact ? `<span>📞 <b>${formatPhone(p.contact)}</b></span>` : ''}
       ${p.recruitHistory && p.recruitHistory.length ? `<span class="badge b-amber" style="font-size:10px">🔄 ${p.recruitHistory.length}차 재모집</span>` : ''}
     </div>
     ${p.memo ? `<div style="font-size:11px;color:var(--teal);background:var(--teal-lt);border-radius:var(--rsm);padding:5px 10px;margin-bottom:6px;white-space:pre-wrap;line-height:1.5">📝 ${p.memo}</div>` : ''}
@@ -3744,6 +3749,8 @@ function loadSettings() {
   if(ri) ri.value = String(cfg.remindInterval ?? 15);
   const id = document.getElementById('cfg-insurance-days');
   if(id) id.value = String(cfg.insuranceDays ?? 3);
+  const im = document.getElementById('cfg-insurance-memo');
+  if(im) im.value = cfg.insuranceMemo || 'KB2025개인간병인배상책임보험(3천)/2025-3561946-1';
   const snd = document.getElementById('cfg-sound');
   if(snd) snd.checked = cfg.sound !== false;
 }
@@ -3756,6 +3763,7 @@ function saveSettings() {
   cfg.bankHolder  = document.getElementById('cfg-bank-holder').value.trim();
   cfg.remindInterval = parseInt(document.getElementById('cfg-remind-interval')?.value ?? 15);
   cfg.insuranceDays  = parseInt(document.getElementById('cfg-insurance-days')?.value ?? 3);
+  cfg.insuranceMemo  = document.getElementById('cfg-insurance-memo')?.value.trim() || 'KB2025개인간병인배상책임보험(3천)/2025-3561946-1';
   cfg.sound = document.getElementById('cfg-sound')?.checked !== false;
   save(); startRemind(); toast('설정 저장됐어요');
 }
@@ -5545,7 +5553,7 @@ function editInsurance(cgId) {
     </div>
     <div class="field">
       <label>보험사 / 보험번호 (선택)</label>
-      <input type="text" id="ins-memo" placeholder="예: 현대해상 보험번호 1234-5678" value="${cg.insuranceMemo||''}">
+      <input type="text" id="ins-memo" placeholder="예: KB2025개인간병인배상책임보험(3천)/2025-3561946-1" value="${cg.insuranceMemo||(cfg.insuranceMemo||'KB2025개인간병인배상책임보험(3천)/2025-3561946-1')}">
     </div>
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn btn-teal" style="flex:1;justify-content:center" onclick="saveInsurance('${cgId}')">저장</button>
@@ -5581,6 +5589,8 @@ function startRemind() {
   insuranceTimer = setInterval(checkInsuranceExpiry, 60 * 60 * 1000);
   // 자동 종료 체크 1분마다
   setInterval(checkAutoEnd, 60 * 1000);
+  // 자동 근무시작 체크 1분마다
+  setInterval(checkAutoStart, 60 * 1000);
   // 출퇴근 자동 채우기 1시간마다
   setInterval(autoFillAllAttendance, 60 * 60 * 1000);
   // 5분마다 자동저장
@@ -5588,11 +5598,58 @@ function startRemind() {
   // 시작 시 즉시 체크
   setTimeout(checkInsuranceExpiry, 3000);
   setTimeout(checkAutoEnd, 2000);
+  setTimeout(checkAutoStart, 2500);
   setTimeout(checkAllRemind, 5000);  // 하루 1회 통합 알림 (앱 시작 시)
   setTimeout(autoFillAllAttendance, 7000);
 }
 
 // ─── 자동 종료 처리 ───
+function checkAutoStart() {
+  const now = new Date();
+  const todayDate = toLocalDateStr(now);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  let changed = false;
+
+  caregivers.forEach(cg => {
+    if(cg.workStatus !== '대기중') return;
+    if(!cg.startDate) return;
+
+    // 시작일이 오늘보다 이전이면 무조건 근무중
+    if(cg.startDate < todayDate) {
+      cg.workStatus = '근무중';
+      changed = true;
+      toast('✅ ' + cg.name + ' 근무중으로 자동 변경됐어요');
+      return;
+    }
+
+    // 시작일이 오늘이면 시작시간 비교
+    if(cg.startDate === todayDate) {
+      if(!cg.startTime) {
+        // 시작시간 없으면 오늘 자정(00:00)부터 근무중
+        cg.workStatus = '근무중';
+        changed = true;
+        toast('✅ ' + cg.name + ' 근무중으로 자동 변경됐어요');
+      } else {
+        const [h, m] = cg.startTime.split(':').map(Number);
+        const startMin = h * 60 + m;
+        if(nowMin >= startMin) {
+          cg.workStatus = '근무중';
+          changed = true;
+          toast('✅ ' + cg.name + ' ' + cg.startTime + ' 근무 시작! 근무중으로 변경됐어요');
+        }
+      }
+    }
+  });
+
+  if(changed) {
+    autoMatch();
+    save();
+    renderCaregivers();
+    renderDashboard();
+    updateSidebar();
+  }
+}
+
 function checkAutoEnd() {
   const now = new Date();
   let changed = false;
