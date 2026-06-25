@@ -1636,6 +1636,7 @@ function attachFirebaseListener() {
       try {
         normalizeTimes(); autoMatch(); updateSidebar();
         renderDashboard(); renderRooms(); checkAutoEnd();
+        checkAutoStart(); // Firebase 로드 완료 후 대기중→근무중 체크
         setTimeout(autoFillAllAttendance, 1000);
       } catch(e) { console.warn('렌더 오류:', e); }
     } else {
@@ -5605,10 +5606,14 @@ function startRemind() {
 
 // ─── 자동 종료 처리 ───
 function checkAutoStart() {
+  // Firebase 데이터 로드 완료 전이면 스킵
+  if(!_fbReady) return;
+
   const now = new Date();
   const todayDate = toLocalDateStr(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   let changed = false;
+  const changedNames = [];
 
   caregivers.forEach(cg => {
     if(cg.workStatus !== '대기중') return;
@@ -5618,24 +5623,23 @@ function checkAutoStart() {
     if(cg.startDate < todayDate) {
       cg.workStatus = '근무중';
       changed = true;
-      toast('✅ ' + cg.name + ' 근무중으로 자동 변경됐어요');
+      changedNames.push(cg.name);
       return;
     }
 
     // 시작일이 오늘이면 시작시간 비교
     if(cg.startDate === todayDate) {
       if(!cg.startTime) {
-        // 시작시간 없으면 오늘 자정(00:00)부터 근무중
         cg.workStatus = '근무중';
         changed = true;
-        toast('✅ ' + cg.name + ' 근무중으로 자동 변경됐어요');
+        changedNames.push(cg.name);
       } else {
-        const [h, m] = cg.startTime.split(':').map(Number);
-        const startMin = h * 60 + m;
+        const parts = cg.startTime.split(':').map(Number);
+        const startMin = (parts[0]||0) * 60 + (parts[1]||0);
         if(nowMin >= startMin) {
           cg.workStatus = '근무중';
           changed = true;
-          toast('✅ ' + cg.name + ' ' + cg.startTime + ' 근무 시작! 근무중으로 변경됐어요');
+          changedNames.push(cg.name + ' (' + cg.startTime + ')');
         }
       }
     }
@@ -5647,6 +5651,7 @@ function checkAutoStart() {
     renderCaregivers();
     renderDashboard();
     updateSidebar();
+    toast('✅ 근무중 자동 변경: ' + changedNames.join(', '));
   }
 }
 
