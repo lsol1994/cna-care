@@ -635,10 +635,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
 <!-- ══ SEND ══ -->
 <div class="page" id="page-send">
-  <div class="sh"><div><div class="sh-title">단톡방 발송</div><div class="sh-sub">환자 선택 → 공고 복사 → 카카오톡 붙여넣기</div></div></div>
+  <div class="sh"><div><div class="sh-title">단톡방 발송</div><div class="sh-sub">환자 선택 → 공고 복사 → 카카오톡 붙여넣기</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm" onclick="toggleAllSendPt()" id="send-select-all-btn" style="font-size:11px">전체 선택</button>
+      <button class="btn btn-teal btn-sm" onclick="copyAllSelected()" id="send-copy-all-btn" style="display:none;font-size:11px">
+        <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        <span id="send-copy-all-label">선택 공고 복사</span>
+      </button>
+    </div>
+  </div>
   <div class="layout-2col">
   <div>
-    <div class="card"><div class="card-hd"><span class="dot"></span>발송할 환자 선택</div><div id="send-pt-list"></div></div>
+    <div class="card"><div class="card-hd"><span class="dot"></span>발송할 환자 선택 <span id="send-selected-count" style="font-size:11px;color:var(--teal);font-weight:700"></span></div><div id="send-pt-list"></div></div>
     <div class="card" id="send-preview-card" style="display:none">
       <div class="card-hd" style="justify-content:space-between">
         <div style="display:flex;align-items:center;gap:6px">
@@ -1588,32 +1596,65 @@ function attachFirebaseListener() {
     const fbMembers    = fbToArr(d.members);
 
     if(fbPatients.length > 0) {
-      patients = fbPatients.map(dp => {
-        if(!dp) return null;
-        const local = patients.find(lp=>String(lp.id)===String(dp.id));
-        if(local && local.status==='종료' && dp.status!=='종료') return local;
-        return dp;
-      }).filter(Boolean);
+      // Firebase 데이터가 현재보다 적으면 (저장 직후 응답) 덮어쓰지 않고 병합만
+      if(fbPatients.length >= patients.length) {
+        patients = fbPatients.map(dp => {
+          if(!dp) return null;
+          const local = patients.find(lp=>String(lp.id)===String(dp.id));
+          if(local && local.status==='종료' && dp.status!=='종료') return local;
+          return dp;
+        }).filter(Boolean);
+      } else {
+        // FB가 더 적으면 → 현재 로컬에만 있는 새 항목을 FB 데이터에 추가
+        const newPts = patients.filter(lp=>!fbPatients.find(dp=>String(dp.id)===String(lp.id)));
+        if(newPts.length > 0) {
+          // 로컬 신규 항목 유지, 나머지는 FB 기준
+          patients = [...fbPatients, ...newPts].map(dp => {
+            if(!dp) return null;
+            const local = patients.find(lp=>String(lp.id)===String(dp.id));
+            if(local && local.status==='종료' && dp.status!=='종료') return local;
+            return dp;
+          }).filter(Boolean);
+        }
+      }
       localStorage.setItem('cnc_patients', JSON.stringify(patients));
     }
     if(fbCaregivers.length > 0) {
-      caregivers = fbCaregivers.map(dc => {
-        if(!dc) return null;
-        const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
-        if(!local) return dc;
-        // 보험 데이터 보호
-        if(local.insuranceActive && !dc.insuranceActive) {
-          dc.insuranceActive     = local.insuranceActive;
-          dc.insuranceExpiry     = local.insuranceExpiry;
-          dc.insuranceMemo       = local.insuranceMemo;
-          dc.insuranceTerminated = local.insuranceTerminated;
+      if(fbCaregivers.length >= caregivers.length) {
+        caregivers = fbCaregivers.map(dc => {
+          if(!dc) return null;
+          const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
+          if(!local) return dc;
+          if(local.insuranceActive && !dc.insuranceActive) {
+            dc.insuranceActive     = local.insuranceActive;
+            dc.insuranceExpiry     = local.insuranceExpiry;
+            dc.insuranceMemo       = local.insuranceMemo;
+            dc.insuranceTerminated = local.insuranceTerminated;
+          }
+          if(local.workStatus==='종료' && dc.workStatus!=='종료') dc.workStatus = local.workStatus;
+          if(local._snapshot && !dc._snapshot) dc._snapshot = local._snapshot;
+          return dc;
+        }).filter(Boolean);
+      } else {
+        // FB가 더 적으면 → 로컬 신규 항목 보존
+        const newCgs = caregivers.filter(lc=>!fbCaregivers.find(dc=>String(dc.id)===String(lc.id)));
+        if(newCgs.length > 0) {
+          caregivers = [...fbCaregivers, ...newCgs].map(dc => {
+            if(!dc) return null;
+            const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
+            if(!local) return dc;
+            if(local.insuranceActive && !dc.insuranceActive) {
+              dc.insuranceActive     = local.insuranceActive;
+              dc.insuranceExpiry     = local.insuranceExpiry;
+              dc.insuranceMemo       = local.insuranceMemo;
+              dc.insuranceTerminated = local.insuranceTerminated;
+            }
+            if(local.workStatus==='종료' && dc.workStatus!=='종료') dc.workStatus = local.workStatus;
+            if(local._snapshot && !dc._snapshot) dc._snapshot = local._snapshot;
+            return dc;
+          }).filter(Boolean);
         }
-        // workStatus 종료 보호
-        if(local.workStatus==='종료' && dc.workStatus!=='종료') dc.workStatus = local.workStatus;
-        // _snapshot 보호 (로컬에 있으면 유지)
-        if(local._snapshot && !dc._snapshot) dc._snapshot = local._snapshot;
-        return dc;
-      }).filter(Boolean);
+      }
       localStorage.setItem('cnc_cg', JSON.stringify(caregivers));
     }
     if(fbAttendance.length > 0) {
@@ -2609,48 +2650,43 @@ function renderSend() {
   const recruit  = patients.filter(p=>p.status==='모집중'&&p.recruitInfo);
   const el = document.getElementById('send-pt-list');
 
-  let html = '';
-
-  // 재모집 환자 섹션
-  if(recruit.length > 0) {
-    html += '<div style="font-size:11px;font-weight:700;color:var(--amber);padding:6px 0 4px;border-bottom:2px solid var(--amber-lt);margin-bottom:8px">🔄 재모집</div>';
-    html += recruit.map(p=>`
-      <div class="pt-row" style="cursor:pointer;${selPt&&selPt.id===p.id?'border-color:var(--teal);box-shadow:0 0 0 3px rgba(11,122,110,.1)':''}" onclick="selectSendPt('${p.id}')">
-        <div class="pt-top">
+  function ptCard(p, isRecruit) {
+    const checked = selectedPtIds.has(String(p.id));
+    const isSelected = selPt && selPt.id === p.id;
+    return `<div class="pt-row" style="cursor:pointer;${isSelected?'border-color:var(--teal);box-shadow:0 0 0 3px rgba(11,122,110,.1)':''}" onclick="selectSendPt('${p.id}')">
+      <div class="pt-top">
+        <div style="display:flex;align-items:flex-start;gap:8px">
+          <input type="checkbox" ${checked?'checked':''} style="margin-top:3px;width:15px;height:15px;accent-color:var(--teal);flex-shrink:0;cursor:pointer" onclick="event.stopPropagation();toggleSendPtCheck('${p.id}',this)">
           <div>
             <div class="pt-name">${p.name}<span>${p.age||''}세 ${p.gender}</span></div>
             <div style="font-size:11px;color:var(--gray)">${p.hospital}</div>
-            ${p.recruitInfo?`<div style="font-size:10px;color:var(--amber);margin-top:2px">🔄 ${p.recruitInfo.startDate} ~ ${p.recruitInfo.endDate||'—'} (${p.recruitInfo.duration||'?'})</div>`:''}
-          </div>
-          <div style="display:flex;gap:4px;align-items:center">
-            ${stBadge(p.status)}
-            <span class="badge b-amber" style="font-size:10px">재모집</span>
+            ${isRecruit&&p.recruitInfo?`<div style="font-size:10px;color:var(--amber);margin-top:2px">🔄 ${p.recruitInfo.startDate} ~ ${p.recruitInfo.endDate||'—'} (${p.recruitInfo.duration||'?'})</div>`:''}
           </div>
         </div>
-      </div>`).join('');
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+          ${stBadge(p.status)}
+          ${isRecruit?'<span class="badge b-amber" style="font-size:10px">재모집</span>':''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  let html = '';
+  if(recruit.length > 0) {
+    html += '<div style="font-size:11px;font-weight:700;color:var(--amber);padding:6px 0 4px;border-bottom:2px solid var(--amber-lt);margin-bottom:8px">🔄 재모집</div>';
+    html += recruit.map(p=>ptCard(p, true)).join('');
     html += '<div style="margin-bottom:1rem"></div>';
   }
-
-  // 일반 모집중 환자 섹션
   if(active.length > 0) {
     if(recruit.length > 0) html += '<div style="font-size:11px;font-weight:700;color:var(--gray);padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:8px">📋 신규 모집</div>';
-    html += active.map(p=>`
-      <div class="pt-row" style="cursor:pointer;${selPt&&selPt.id===p.id?'border-color:var(--teal);box-shadow:0 0 0 3px rgba(11,122,110,.1)':''}" onclick="selectSendPt('${p.id}')">
-        <div class="pt-top">
-          <div><div class="pt-name">${p.name}<span>${p.age||''}세 ${p.gender}</span></div>
-            <div style="font-size:11px;color:var(--gray)">${p.hospital}</div></div>
-          <div style="display:flex;gap:4px;align-items:center">
-            ${stBadge(p.status)}
-          </div>
-        </div>
-      </div>`).join('');
+    html += active.map(p=>ptCard(p, false)).join('');
   }
-
   if(!active.length && !recruit.length) {
     html = '<div class="empty"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><p>모집중인 환자가 없어요</p></div>';
   }
 
   el.innerHTML = html;
+  updateSendSelectedUI();
   renderRooms();
 }
 
@@ -2731,6 +2767,68 @@ function fillQuickEditFields(p) {
     timeEl.value     = p.startTime || '';
     durationEl.value = p.duration  || '';
   }
+}
+
+// ─── 단톡방 다중 선택 ───
+let selectedPtIds = new Set();
+
+function toggleSendPtCheck(id, el) {
+  if(selectedPtIds.has(id)) {
+    selectedPtIds.delete(id);
+    el.checked = false;
+  } else {
+    selectedPtIds.add(id);
+    el.checked = true;
+  }
+  updateSendSelectedUI();
+}
+
+function updateSendSelectedUI() {
+  const count = selectedPtIds.size;
+  const countEl = document.getElementById('send-selected-count');
+  const copyBtn  = document.getElementById('send-copy-all-btn');
+  const label    = document.getElementById('send-copy-all-label');
+  if(countEl) countEl.textContent = count > 0 ? count+'명 선택' : '';
+  if(copyBtn) copyBtn.style.display = count > 1 ? '' : 'none';
+  if(label)   label.textContent = count+'개 공고 일괄 복사';
+}
+
+function toggleAllSendPt() {
+  const allPts = patients.filter(p=>p.status==='모집중');
+  const allIds = allPts.map(p=>String(p.id));
+  const allSelected = allIds.every(id=>selectedPtIds.has(id));
+  if(allSelected) {
+    selectedPtIds.clear();
+  } else {
+    allIds.forEach(id=>selectedPtIds.add(id));
+  }
+  const btn = document.getElementById('send-select-all-btn');
+  if(btn) btn.textContent = selectedPtIds.size > 0 ? '전체 해제' : '전체 선택';
+  renderSend();
+  updateSendSelectedUI();
+}
+
+function copyAllSelected() {
+  if(selectedPtIds.size === 0) { toast('환자를 선택해주세요', true); return; }
+  const posts = [];
+  selectedPtIds.forEach(id => {
+    const p = patients.find(x=>String(x.id)===String(id));
+    if(!p) return;
+    const post = p.recruitInfo ? buildRecruitPost(p) : (p._editedPost || buildPost(p));
+    posts.push(post);
+  });
+  const combined = posts.join('\n\n' + '─'.repeat(20) + '\n\n');
+  navigator.clipboard.writeText(combined).then(()=>{
+    toast('✅ ' + posts.length + '개 공고 복사됐어요! 카카오톡에 붙여넣기 하세요');
+  }).catch(()=>{
+    const el = document.createElement('textarea');
+    el.value = combined;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    toast('✅ ' + posts.length + '개 공고 복사됐어요!');
+  });
 }
 
 function getBasePost(p) {
@@ -6517,7 +6615,7 @@ function autoMatch() {
     }
   });
 
-  if(count > 0) save();
+  if(count > 0) localStorage.setItem('cnc_patients', JSON.stringify(patients));
   return count;
 }
 
