@@ -1571,7 +1571,10 @@ function attachFirebaseListener() {
 
     const d = snap.val();
     if(!d || Object.keys(d).length === 0) {
-      if(patients.length || caregivers.length) save();
+      if(patients.length || caregivers.length) {
+        // DB 비어있으면 현재 로컬 데이터를 DB에 저장 (디바운스)
+        setTimeout(() => { if(!_fbPause) save(); }, 500);
+      }
       _fbReady = true;
       showSyncStatus('연결됨');
       return;
@@ -1596,25 +1599,32 @@ function attachFirebaseListener() {
     const fbMembers    = fbToArr(d.members);
 
     if(fbPatients.length > 0) {
-      // Firebase 데이터가 현재보다 적으면 (저장 직후 응답) 덮어쓰지 않고 병합만
+      // Firebase 데이터가 현재보다 적으면 신규 항목 보존하며 병합
+      const mergePatients = (fbList) => fbList.map(dp => {
+        if(!dp) return null;
+        const local = patients.find(lp=>String(lp.id)===String(dp.id));
+        if(!local) return dp;
+        // 종료 환자 보호
+        if(local.status==='종료' && dp.status!=='종료') return local;
+        // 중도종료로 인해 로컬에서 caregiverName을 비운 경우 보호
+        // 해당 환자를 earlyEndPatientId로 참조하는 간병인이 있으면 caregiverName 클리어 유지
+        const hasEarlyEndCg = caregivers.some(c =>
+          (c.earlyEndPatientId || c.earlyEndSnapshot) &&
+          String(c.earlyEndPatientId || (c.earlyEndSnapshot&&c.earlyEndSnapshot.patientId)) === String(dp.id)
+        );
+        if(hasEarlyEndCg && local.status === '모집중' && dp.status === '매칭완료') {
+          // 로컬이 모집중(중도종료 처리됨)인데 FB가 매칭완료면 → 로컬 우선
+          return local;
+        }
+        return dp;
+      }).filter(Boolean);
+
       if(fbPatients.length >= patients.length) {
-        patients = fbPatients.map(dp => {
-          if(!dp) return null;
-          const local = patients.find(lp=>String(lp.id)===String(dp.id));
-          if(local && local.status==='종료' && dp.status!=='종료') return local;
-          return dp;
-        }).filter(Boolean);
+        patients = mergePatients(fbPatients);
       } else {
-        // FB가 더 적으면 → 현재 로컬에만 있는 새 항목을 FB 데이터에 추가
         const newPts = patients.filter(lp=>!fbPatients.find(dp=>String(dp.id)===String(lp.id)));
         if(newPts.length > 0) {
-          // 로컬 신규 항목 유지, 나머지는 FB 기준
-          patients = [...fbPatients, ...newPts].map(dp => {
-            if(!dp) return null;
-            const local = patients.find(lp=>String(lp.id)===String(dp.id));
-            if(local && local.status==='종료' && dp.status!=='종료') return local;
-            return dp;
-          }).filter(Boolean);
+          patients = [...mergePatients(fbPatients), ...newPts];
         }
       }
       localStorage.setItem('cnc_patients', JSON.stringify(patients));
@@ -1955,22 +1965,6 @@ function getFormPatient() {
   };
 }
 
-function syncDuration(val) {
-  const sel = document.getElementById('p-duration-sel');
-  const inp = document.getElementById('p-duration');
-  if(val === '__direct') {
-    inp.style.display = '';
-    inp.focus();
-    sel.style.flex = '0 0 auto';
-    sel.style.width = '110px';
-  } else {
-    inp.style.display = 'none';
-    inp.value = '';
-    sel.style.flex = '1';
-    sel.style.width = '';
-  }
-  updateNPPreview();
-}
 
 function getDuration() {
   const sel = document.getElementById('p-duration-sel');
@@ -1984,11 +1978,6 @@ function updateNPPreview() {
   document.getElementById('np-preview').value = buildPost(p);
 }
 
-function copyNewPreview() {
-  const txt = document.getElementById('np-preview').value;
-  if(!txt || txt.includes('입력하면')) { toast('공고 내용을 입력해주세요',true); return; }
-  doCopy(txt);
-}
 
 function doCopy(text) {
   if(navigator.clipboard) {
@@ -2100,6 +2089,7 @@ function ptRowHTML(p) {
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${stBadge(p.status)}
+        ${p.recruitInfo ? `<span class="badge b-amber" style="font-size:10px">🔄 재모집중</span>` : ''}
         ${ptDdayBadge(p)}
       </div>
     </div>
@@ -3562,11 +3552,6 @@ function selectTermType(type) {
   }
 }
 
-function fillNewCgInfo() {
-  // 새 간병인 선택 시 도착시간을 현재 시각으로 자동 설정
-  const timeEl = document.getElementById('et-newTime');
-  if(timeEl && !timeEl.value) timeEl.value = nowTimeStr();
-}
 
 function confirmEarlyTerminate(cgId) {
   const cg = caregivers.find(c=>String(c.id)===String(cgId));
@@ -4845,9 +4830,8 @@ function deleteNoticeById(id) {
 function saveAutoNotice(content, level) {
   level = level || 'auto';
   const today = todayStr();
-  // 오늘 날짜 자동알림 기존 것 모두 제거 (중복 방지)
+  // 오늘 날짜 자동알림 기존 것 제거 (중복 방지)
   notices = notices.filter(function(n){ return !(n.type==='auto' && n.createdAt===today); });
-  // 새 알림 추가
   notices.unshift({
     id: Date.now()+Math.random(),
     title: '',
@@ -4856,9 +4840,12 @@ function saveAutoNotice(content, level) {
     createdAt: today,
     type: 'auto'
   });
-  // 최대 50개 유지
   if(notices.length > 50) notices = notices.slice(0, 50);
-  save();
+  // localStorage만 업데이트 (save() 호출 시 Firebase 트리거되어 리스너 재연결 방지)
+  localStorage.setItem('cnc_notices', JSON.stringify(notices));
+  // 디바운스 후 Firebase 저장
+  clearTimeout(saveAutoNotice._timer);
+  saveAutoNotice._timer = setTimeout(function(){ save(); }, 2000);
 }
 
 // ─── 통합 알림 팝업 ───
@@ -4962,7 +4949,6 @@ function checkAllRemind() {
 }
 
 // 기존 개별 알림 함수를 통합 함수로 대체
-function checkDateRemind() { checkAllRemind(); }
 function checkPayRemind(testMode) {
   if(testMode) {
     // 테스트 모드만 기존 방식 유지
@@ -6537,10 +6523,33 @@ function parseCSVFile(filename, text) {
 function autoMatch() {
   let count = 0;
 
-  // 중도종료 간병인 판별 (earlyEndPatientId 있으면 중도종료 상태)
+  // 중도종료 간병인 판별
   const isEarlyEnded = c => !!(c.earlyEndPatientId || c.earlyEndSnapshot);
 
-  // ① 환자에 caregiverName이 있으면 → 매칭완료 (종료 환자 제외)
+  // ① caregiverName 유효성 먼저 정리
+  // caregiverName이 있지만 해당 간병인이 중도종료 상태면 → caregiverName 클리어
+  patients.forEach(p => {
+    if(p.status === '종료') return;
+    if(!p.caregiverName) return;
+    const cgName = p.caregiverName.trim();
+    const cg = caregivers.find(c => c.name === cgName);
+    if(!cg) return;
+    // 해당 간병인이 중도종료 상태이고, 이 환자의 간병인으로 연결된 다른 간병인이 없으면
+    if(isEarlyEnded(cg)) {
+      const otherCg = caregivers.find(c =>
+        !isEarlyEnded(c) &&
+        (c.name === cgName ? c.patientId === String(p.id) : c.patientId === String(p.id))
+      );
+      if(!otherCg) {
+        p.caregiverName = '';
+        p.status        = '모집중';
+        p.recruited     = false;
+        count++;
+      }
+    }
+  });
+
+  // ② 환자에 caregiverName이 있으면 → 매칭완료 (중도종료 간병인 제외 후)
   patients.forEach(p => {
     if(p.status === '종료') return;
     if(!p.caregiverName || p.caregiverName.trim() === '') return;
@@ -6550,14 +6559,14 @@ function autoMatch() {
     count++;
   });
 
-  // ② 간병인-환자 patientId 연결 (중도종료 간병인 제외)
+  // ③ 간병인-환자 patientId 연결 (중도종료 간병인 제외)
   patients.forEach(p => {
     if(p.status === '종료') return;
     if(!p.caregiverName) return;
     const cgName = p.caregiverName.trim();
     const cg = caregivers.find(c =>
       c.name === cgName &&
-      !isEarlyEnded(c) &&  // 중도종료 간병인 제외
+      !isEarlyEnded(c) &&
       (!c.patientId || c.patientId === String(p.id))
     );
     if(!cg) return;
@@ -6568,9 +6577,9 @@ function autoMatch() {
     count++;
   });
 
-  // ③ 반대 방향: 간병인 patientId → 환자 (중도종료 간병인 완전 제외)
+  // ④ 반대 방향: 간병인 patientId → 환자 (중도종료 간병인 완전 제외)
   caregivers.forEach(c => {
-    if(isEarlyEnded(c)) return; // 중도종료 간병인 완전 스킵
+    if(isEarlyEnded(c)) return;
     if(!c.patientId) return;
     const pt = patients.find(p => String(p.id) === String(c.patientId));
     if(!pt) return;
@@ -6582,9 +6591,9 @@ function autoMatch() {
     if(changed) count++;
   });
 
-  // ④ 마감일 동기화 (중도종료 간병인 제외)
+  // ⑤ 마감일 동기화 (중도종료 간병인 제외)
   caregivers.forEach(c => {
-    if(isEarlyEnded(c)) return; // 중도종료 간병인 제외
+    if(isEarlyEnded(c)) return;
     if(!c.patientId || !c.endDate) return;
     const pt = patients.find(p=>String(p.id)===String(c.patientId));
     if(!pt || pt.status === '종료') return;
@@ -6595,8 +6604,7 @@ function autoMatch() {
     }
   });
 
-  // ⑤ 매칭완료인데 연결된 간병인 없으면 → 모집중 복구
-  // 단, 중도종료 간병인의 earlyEndPatientId는 매칭으로 보지 않음
+  // ⑥ 매칭완료인데 실제 간병인 없으면 → 모집중 복구
   patients.forEach(p => {
     if(p.status === '종료') return;
     if(p.status !== '매칭완료' && p.recruited !== true) return;
