@@ -4532,26 +4532,27 @@ function calcTotalPay(cg) {
   const payPerDay = Number(cg.pay);
   if(!payPerDay) return '';
 
-  // 시작/종료 시간 포함한 실제 분 단위 계산
-  const [sh=8, sm=0] = (cg.startTime||'08:00').split(':').map(Number);
-  const [eh=8, em=0] = (cg.endTime  ||'08:00').split(':').map(Number);
+  const OT_PER_HOUR = 10000; // OT 시간당 요금
 
+  const [sh=8,sm=0] = (cg.startTime||'08:00').split(':').map(Number);
+  const [eh=8,em=0] = (cg.endTime  ||'08:00').split(':').map(Number);
   const startMs = parseLocalDate(cg.startDate).getTime() + (sh*60+sm)*60000;
   const endMs   = parseLocalDate(cg.endDate).getTime()   + (eh*60+em)*60000;
-  if(isNaN(startMs) || isNaN(endMs)) return '';
+  if(isNaN(startMs)||isNaN(endMs)) return '';
 
   const totalMin = Math.round((endMs - startMs) / 60000);
   if(totalMin <= 0) return '';
 
-  const days   = Math.floor(totalMin / (24*60));  // 완전한 24시간 단위 일수
-  const otMin  = totalMin % (24*60);              // 나머지 OT 분
+  const days   = Math.floor(totalMin / (24*60));
+  const otMin  = totalMin % (24*60);
   const otHour = Math.floor(otMin / 60);
   const otMod  = otMin % 60;
 
   const dayPay = payPerDay * days;
+  // OT: 시간 단위만 (분은 절사)
+  const otPay  = otHour * OT_PER_HOUR;
+  const total  = dayPay + otPay;
 
-  // OT 요금: 시간당 일급/24h (단, OT 없으면 표시 안 함)
-  // OT는 분 단위로 표시, 요금은 회사 정책에 따라 별도 표기
   let result = '';
   if(days > 0) {
     result = days + '일 × ' + payPerDay.toLocaleString() + '원 = ' + dayPay.toLocaleString() + '원';
@@ -4560,10 +4561,13 @@ function calcTotalPay(cg) {
     const otStr = otHour > 0
       ? otHour + '시간' + (otMod > 0 ? ' ' + otMod + '분' : '')
       : otMod + '분';
-    result += (result ? ' + ' : '') + 'OT ' + otStr;
+    const otPayStr = otHour > 0 ? ' (+' + otPay.toLocaleString() + '원)' : '';
+    result += (result ? '\n' : '') + 'OT ' + otStr + otPayStr;
   }
-  if(!result) return '';
-  return result;
+  if(otHour > 0 && days > 0) {
+    result += '\n합계: ' + total.toLocaleString() + '원';
+  }
+  return result || '';
 }
 
 // OT 포함 총 시간 텍스트
