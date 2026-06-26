@@ -2340,11 +2340,24 @@ function editPatient(id) {
         <input type="time" id="ep-startTime" value="${p.startTime||''}">
       </div>
       <div class="field"><label>사용 기간</label>
-        <input type="text" id="ep-duration" value="${p.duration||''}">
+        <input type="text" id="ep-duration" value="${p.duration||''}" placeholder="예: 7일, 2주">
       </div>
       <div class="field"><label>금액 (일급, 원)</label>
         <input type="number" id="ep-pay" value="${p.pay||''}">
       </div>
+    </div>
+    <!-- 종료일/시간 독립 입력 -->
+    <div style="background:var(--surface2);border-radius:var(--rsm);padding:10px 12px;margin-bottom:.875rem">
+      <div style="font-size:11px;font-weight:700;color:var(--gray);margin-bottom:8px">📅 실제 종료일 / 시간 <span style="font-size:10px;font-weight:400">(입력 시 기간 자동 재계산)</span></div>
+      <div class="g2">
+        <div class="field" style="margin-bottom:0">
+          <input type="date" id="ep-endDate" value="${p.endDate||''}" onchange="onEpEndDateChange()">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <input type="time" id="ep-endTime" value="${p.endTime||''}">
+        </div>
+      </div>
+      <div id="ep-duration-preview" style="font-size:11px;color:var(--teal);margin-top:6px;font-weight:600"></div>
     </div>
     <div class="field">
       <label>구인 간병인 성별</label>
@@ -2426,15 +2439,28 @@ function savePatientEdit(id) {
   p.pay       = document.getElementById('ep-pay').value;
   p.request   = document.getElementById('ep-request').value.trim();
 
-  // duration 또는 startDate 변경 시 endDate 자동 재계산
-  if(p.startDate && p.duration) {
+  // 종료일/시간 독립 입력 처리
+  const newEndDate = document.getElementById('ep-endDate')?.value || '';
+  const newEndTime = document.getElementById('ep-endTime')?.value || '';
+
+  if(newEndDate) {
+    // 종료일이 직접 입력됨 → 이걸 기준으로 기간 재계산 (시작일/시간 건드리지 않음)
+    p.endDate = newEndDate;
+    p.endTime = newEndTime;
+    if(p.startDate) {
+      const days = Math.round((parseLocalDate(newEndDate) - parseLocalDate(p.startDate)) / 86400000);
+      if(days >= 0) p.duration = days + '일';
+    }
+  } else if(p.startDate && p.duration) {
+    // 종료일 없고 기간만 있으면 → 기간으로 종료일 계산
     const days = parseDurationDays(p.duration);
     if(days) {
       const d = parseLocalDate(p.startDate);
       if(d) {
         d.setDate(d.getDate() + days);
         p.endDate = toLocalDateStr(d);
-        p.endTime = p.startTime || p.endTime || '';
+        // ⚠️ 시작시간은 종료시간에 영향 주지 않음 (독립)
+        if(!p.endTime) p.endTime = '';
       }
     }
   }
@@ -3368,7 +3394,7 @@ function renderCaregivers() {
         ${cg.specialty?`<span>⭐ ${cg.specialty}</span>`:''}
         ${(()=>{
           const total = calcTotalPay(cg);
-          return total ? `<span style="color:var(--teal);font-weight:700">💵 총 ${total}</span>` : '';
+          return total ? `<span style="color:var(--teal);font-weight:700">💵 ${total}</span>` : '';
         })()}
       </div>
       ${cg.memo ? `<div style="font-size:11px;color:var(--teal);background:var(--teal-lt);border-radius:var(--rsm);padding:5px 10px;margin-bottom:6px;white-space:pre-wrap;line-height:1.5">📝 ${cg.memo}</div>` : ''}
@@ -3402,7 +3428,6 @@ function openCgDetail(id) {
   const cg=caregivers.find(x=>String(x.id)===String(id));
   if(!cg){toast('간병인 정보를 찾을 수 없어요',true);return;}
   const pt=cg.patientId?patients.find(p=>String(p.id)===String(cg.patientId)):null;
-  const totalPay = calcTotalPay(cg);
   document.getElementById('cg-modal-title').textContent=cg.name+' 간병인 상세';
   document.getElementById('cg-form-body').innerHTML=`
     <div class="g2" style="margin-bottom:.875rem">
@@ -3418,10 +3443,18 @@ function openCgDetail(id) {
         <div style="font-size:13px;font-weight:600">${v||'—'}</div>
       </div>`).join('')}
     </div>
-    ${totalPay ? `<div style="background:var(--teal-lt);border:1px solid rgba(11,122,110,.2);border-radius:var(--rsm);padding:10px 14px;margin-bottom:.875rem;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:12px;color:var(--teal);font-weight:600">💵 총 간병비</span>
-      <span style="font-size:16px;font-weight:900;color:var(--teal)">${totalPay}</span>
-    </div>` : ''}
+    ${(()=>{
+      const total = calcTotalPay(cg);
+      const hours = calcTotalHours(cg);
+      if(!total) return '';
+      return `<div style="background:var(--teal-lt);border:1px solid rgba(11,122,110,.2);border-radius:var(--rsm);padding:10px 14px;margin-bottom:.875rem">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--teal);font-weight:600">💵 총 간병비</span>
+          <span style="font-size:15px;font-weight:900;color:var(--teal)">${total}</span>
+        </div>
+        ${hours?`<div style="font-size:11px;color:var(--gray);margin-top:3px;text-align:right">총 근무시간: ${hours}</div>`:''}
+      </div>`;
+    })()}
     ${cg.feedback?`<div style="font-size:12px;color:var(--gray);background:var(--surface2);border-radius:var(--rsm);padding:8px 10px;margin-bottom:.875rem">💬 보호자 피드백: ${cg.feedback}</div>`:''}
     <div class="hr"></div>
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray);margin-bottom:8px">🔗 매칭 환자</div>
@@ -4175,6 +4208,24 @@ function fixEarlyEndData() {
     toast('복구할 데이터가 없어요 (이미 모두 복구됨)');
   }
 }
+// 환자 수정 폼 - 종료일 변경 시 기간 미리보기
+function onEpEndDateChange() {
+  const startDate = document.getElementById('ep-startDate')?.value;
+  const endDate   = document.getElementById('ep-endDate')?.value;
+  const preview   = document.getElementById('ep-duration-preview');
+  if(!preview) return;
+  if(!startDate || !endDate) { preview.textContent = ''; return; }
+  const days = Math.round((parseLocalDate(endDate) - parseLocalDate(startDate)) / 86400000);
+  if(days < 0) {
+    preview.textContent = '⚠️ 종료일이 시작일보다 이릅니다';
+    preview.style.color = 'var(--red)';
+  } else {
+    preview.textContent = '→ 서비스 기간: ' + days + '일로 자동 재계산됩니다';
+    preview.style.color = 'var(--teal)';
+    document.getElementById('ep-duration').value = days + '일';
+  }
+}
+
 function fixRecruitDates() {
   let count = 0;
   patients.forEach(p => {
@@ -4481,31 +4532,53 @@ function calcTotalPay(cg) {
   const payPerDay = Number(cg.pay);
   if(!payPerDay) return '';
 
-  const start = parseLocalDate(cg.startDate);
-  const end   = parseLocalDate(cg.endDate);
-  if(!start || !end) return '';
+  // 시작/종료 시간 포함한 실제 분 단위 계산
+  const [sh=8, sm=0] = (cg.startTime||'08:00').split(':').map(Number);
+  const [eh=8, em=0] = (cg.endTime  ||'08:00').split(':').map(Number);
 
-  // 날짜 차이 (일수)
-  let days = Math.round((end - start) / 86400000);
+  const startMs = parseLocalDate(cg.startDate).getTime() + (sh*60+sm)*60000;
+  const endMs   = parseLocalDate(cg.endDate).getTime()   + (eh*60+em)*60000;
+  if(isNaN(startMs) || isNaN(endMs)) return '';
 
-  // 24시간 기준 시간 보정
-  // 예: 6/4 16:00 ~ 6/6 16:00 = 2일
-  if(cg.startTime && cg.endTime) {
-    const [sh, sm] = cg.startTime.split(':').map(Number);
-    const [eh, em] = cg.endTime.split(':').map(Number);
-    const startMin = sh*60+sm;
-    const endMin   = eh*60+em;
-    // 마감시간이 시작시간보다 늦으면 정확히 N일
-    // 마감시간이 시작시간보다 이르면 N-1일 + 잔여시간
-    if(endMin < startMin) {
-      // 예: 10:00 시작 ~ 08:00 마감이면 온전한 하루가 안 됨
-      // 비즈니스 규칙상 날짜 단위로만 계산
-    }
+  const totalMin = Math.round((endMs - startMs) / 60000);
+  if(totalMin <= 0) return '';
+
+  const days   = Math.floor(totalMin / (24*60));  // 완전한 24시간 단위 일수
+  const otMin  = totalMin % (24*60);              // 나머지 OT 분
+  const otHour = Math.floor(otMin / 60);
+  const otMod  = otMin % 60;
+
+  const dayPay = payPerDay * days;
+
+  // OT 요금: 시간당 일급/24h (단, OT 없으면 표시 안 함)
+  // OT는 분 단위로 표시, 요금은 회사 정책에 따라 별도 표기
+  let result = '';
+  if(days > 0) {
+    result = days + '일 × ' + payPerDay.toLocaleString() + '원 = ' + dayPay.toLocaleString() + '원';
   }
+  if(otMin > 0) {
+    const otStr = otHour > 0
+      ? otHour + '시간' + (otMod > 0 ? ' ' + otMod + '분' : '')
+      : otMod + '분';
+    result += (result ? ' + ' : '') + 'OT ' + otStr;
+  }
+  if(!result) return '';
+  return result;
+}
 
-  if(days <= 0) return '';
-  const total = payPerDay * days;
-  return `${days}일 × ${payPerDay.toLocaleString()}원 = ${total.toLocaleString()}원`;
+// OT 포함 총 시간 텍스트
+function calcTotalHours(cg) {
+  if(!cg.startDate || !cg.endDate) return '';
+  const [sh=8,sm=0] = (cg.startTime||'08:00').split(':').map(Number);
+  const [eh=8,em=0] = (cg.endTime  ||'08:00').split(':').map(Number);
+  const startMs = parseLocalDate(cg.startDate).getTime() + (sh*60+sm)*60000;
+  const endMs   = parseLocalDate(cg.endDate).getTime()   + (eh*60+em)*60000;
+  if(isNaN(startMs)||isNaN(endMs)) return '';
+  const totalMin = Math.round((endMs-startMs)/60000);
+  if(totalMin<=0) return '';
+  const h = Math.floor(totalMin/60);
+  const m = totalMin%60;
+  return h + '시간' + (m>0?' '+m+'분':'');
 }
 // ─── 캘린더 ───
 let _calYear  = new Date().getFullYear();
