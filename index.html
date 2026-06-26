@@ -1460,6 +1460,7 @@ let rptType        = 'all';
 let selRptPt       = null;
 let _fbReady       = false;
 let _fbPause       = false;
+let _deletedCgIds  = new Set(); // 의도적으로 삭제된 간병인 ID (리스너 복원 방지)
 let _journalFmt    = 'xlsx';
 
 // ─── Firebase 초기화 (동적 로딩 - 실패해도 앱 동작) ───
@@ -1541,6 +1542,7 @@ function save() {
       db.ref('cnc').set(payload)
         .then(() => {
           showSyncStatus('저장됨');
+          _deletedCgIds.clear(); // 저장 완료 → 삭제 ID 보호 해제
           setTimeout(() => {
             _fbPause = false;
             attachFirebaseListener();
@@ -1645,8 +1647,11 @@ function attachFirebaseListener() {
       localStorage.setItem('cnc_patients', JSON.stringify(patients));
     }
     if(fbCaregivers.length > 0) {
-      if(fbCaregivers.length >= caregivers.length) {
-        caregivers = fbCaregivers.map(dc => {
+      // _deletedCgIds에 있는 항목은 Firebase에서 복원하지 않음
+      const filteredFb = fbCaregivers.filter(dc => !_deletedCgIds.has(String(dc.id)));
+
+      function mergeCg(fbList) {
+        return fbList.map(dc => {
           if(!dc) return null;
           const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
           if(!local) return dc;
@@ -1660,25 +1665,13 @@ function attachFirebaseListener() {
           if(local._snapshot && !dc._snapshot) dc._snapshot = local._snapshot;
           return dc;
         }).filter(Boolean);
+      }
+
+      if(filteredFb.length >= caregivers.length) {
+        caregivers = mergeCg(filteredFb);
       } else {
-        // FB가 더 적으면 → 로컬 신규 항목 보존
-        const newCgs = caregivers.filter(lc=>!fbCaregivers.find(dc=>String(dc.id)===String(lc.id)));
-        if(newCgs.length > 0) {
-          caregivers = [...fbCaregivers, ...newCgs].map(dc => {
-            if(!dc) return null;
-            const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
-            if(!local) return dc;
-            if(local.insuranceActive && !dc.insuranceActive) {
-              dc.insuranceActive     = local.insuranceActive;
-              dc.insuranceExpiry     = local.insuranceExpiry;
-              dc.insuranceMemo       = local.insuranceMemo;
-              dc.insuranceTerminated = local.insuranceTerminated;
-            }
-            if(local.workStatus==='종료' && dc.workStatus!=='종료') dc.workStatus = local.workStatus;
-            if(local._snapshot && !dc._snapshot) dc._snapshot = local._snapshot;
-            return dc;
-          }).filter(Boolean);
-        }
+        const newCgs = caregivers.filter(lc=>!filteredFb.find(dc=>String(dc.id)===String(lc.id)));
+        caregivers = newCgs.length > 0 ? [...mergeCg(filteredFb), ...newCgs] : mergeCg(filteredFb);
       }
       localStorage.setItem('cnc_cg', JSON.stringify(caregivers));
     }
@@ -3708,8 +3701,9 @@ function mergeDuplicateCg(name) {
   // 날짜 순 정렬 (최신이 먼저)
   keepCg.assignHistory.sort((a,b)=>(b.startDate||'').localeCompare(a.startDate||''));
 
-  // 중복 레코드 삭제
+  // 중복 레코드 삭제 + ID 추적
   const deleteIds = new Set(deleteCgs.map(cg=>String(cg.id)));
+  deleteIds.forEach(id => _deletedCgIds.add(id)); // 리스너 복원 방지
   caregivers = caregivers.filter(cg=>!deleteIds.has(String(cg.id)));
 
   save();
