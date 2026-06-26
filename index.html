@@ -3516,6 +3516,7 @@ function openCgDetail(id) {
         <div style="font-size:11px;font-weight:700;color:var(--gray);letter-spacing:.4px;margin-bottom:8px">📋 과거 담당 환자 (${hist.length}건)</div>
         <div style="display:flex;flex-direction:column;gap:6px">
           ${hist.map(h => {
+            const isActive = h.status === '근무중' || h.status === '대기중';
             const totalPay = (h.pay && h.startDate && h.endDate) ? (() => {
               const [sh=8,sm=0]=(h.startTime||'08:00').split(':').map(Number);
               const [eh=8,em=0]=(h.endTime||'08:00').split(':').map(Number);
@@ -3528,13 +3529,16 @@ function openCgDetail(id) {
               const pay=Number(h.pay)*days+otH*10000;
               return pay>0?pay.toLocaleString()+'원':'';
             })() : '';
-            return `<div style="background:var(--surface2);border-radius:var(--rsm);padding:8px 12px;font-size:12px">
+            return `<div style="background:var(--surface2);border:1px solid ${isActive?'var(--teal)':'var(--border)'};border-radius:var(--rsm);padding:8px 12px;font-size:12px">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-                <span style="font-weight:700">${h.patientName}</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-weight:700">${h.patientName}</span>
+                  ${isActive?`<span style="font-size:10px;background:var(--teal);color:#fff;padding:1px 5px;border-radius:3px">${h.status}</span>`:''}
+                </div>
                 <span style="color:var(--gray);font-size:10px">${h.recordedAt||''}</span>
               </div>
               <div style="color:var(--gray)">🏥 ${h.hospital||'—'}</div>
-              <div style="color:var(--gray)">📅 ${h.startDate||'—'} ${h.startTime||''} ~ ${h.endDate||'—'} ${h.endTime||''}</div>
+              <div style="color:var(--gray)">📅 ${h.startDate||'—'} ${h.startTime||''} ~ ${h.endDate?h.endDate+' '+(h.endTime||''):'(진행중)'}</div>
               ${totalPay?`<div style="color:var(--teal);font-weight:600;margin-top:2px">💵 ${totalPay}</div>`:''}
             </div>`;
           }).join('')}
@@ -3568,22 +3572,25 @@ function saveCgMemoFromModal(cgId) {
   toast('✅ ' + cg.name + ' 메모 저장됐어요');
 }
 // ─── 간병인 근무 이력 ───
-// 현재 담당 환자 정보를 assignHistory에 저장
-function saveToAssignHistory(cg) {
-  if(!cg.patientId && !cg.earlyEndPatientId) return;
-  const ptId = cg.patientId || cg.earlyEndPatientId;
-  const pt   = patients.find(p=>String(p.id)===String(ptId));
+function saveToAssignHistory(cg, overridePatientId) {
+  const ptId = overridePatientId || cg.patientId || cg.earlyEndPatientId;
+  if(!ptId) return;
+  const pt = patients.find(p=>String(p.id)===String(ptId));
   if(!pt) return;
   if(!cg.assignHistory) cg.assignHistory = [];
-  // 이미 같은 환자 이력이 있으면 업데이트
-  const existing = cg.assignHistory.find(h=>String(h.patientId)===String(ptId)
-    && h.startDate === (cg.startDate||''));
+
+  // 같은 환자 + 시작일이 이미 있으면 업데이트
+  const existing = cg.assignHistory.find(h =>
+    String(h.patientId)===String(ptId) && h.startDate===(cg.startDate||'')
+  );
   if(existing) {
-    existing.endDate   = cg.endDate   || existing.endDate;
-    existing.endTime   = cg.endTime   || existing.endTime;
+    if(cg.endDate) existing.endDate = cg.endDate;
+    if(cg.endTime) existing.endTime = cg.endTime;
+    existing.status     = cg.workStatus || existing.status;
     existing.recordedAt = new Date().toLocaleDateString('ko-KR');
     return;
   }
+
   cg.assignHistory.unshift({
     patientId:   String(ptId),
     patientName: pt.name,
@@ -3593,6 +3600,7 @@ function saveToAssignHistory(cg) {
     endDate:     cg.endDate   || '',
     endTime:     cg.endTime   || '',
     pay:         cg.pay       || '',
+    status:      cg.workStatus || '',   // 근무중/대기중/종료 상태 보존
     recordedAt:  new Date().toLocaleDateString('ko-KR')
   });
 }
@@ -3677,10 +3685,11 @@ function mergeDuplicateCg(name) {
 
   // 삭제되는 레코드의 이력 통합
   deleteCgs.forEach(cg => {
-    // 현재 담당 환자도 이력으로 저장
-    if(cg.patientId || cg.earlyEndPatientId) {
-      saveToAssignHistory(cg);
-    }
+    // 현재 또는 마지막 담당 환자 이력 저장
+    const ptId = cg.patientId || cg.earlyEndPatientId
+      || (cg.earlyEndSnapshot && cg.earlyEndSnapshot.patientId);
+    if(ptId) saveToAssignHistory(cg, ptId);
+
     // 기존 assignHistory 통합 (중복 제거)
     (cg.assignHistory||[]).forEach(h => {
       const dup = keepCg.assignHistory.find(kh =>
@@ -3688,7 +3697,8 @@ function mergeDuplicateCg(name) {
       );
       if(!dup) keepCg.assignHistory.push(h);
     });
-    // 삭제 레코드가 연결한 환자 caregiverName 유지 레코드로 이전
+
+    // 삭제 레코드가 연결한 환자 caregiverName → 유지 레코드 이름으로 이전
     if(cg.patientId) {
       const pt = patients.find(p=>String(p.id)===String(cg.patientId));
       if(pt && pt.status !== '종료') pt.caregiverName = keepCg.name;
