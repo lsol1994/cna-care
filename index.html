@@ -1182,6 +1182,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="deduplicateNotices()">
         🧹 중복 알림 정리
       </button>
+      <button class="btn btn-sm" style="border-color:var(--blue);color:var(--blue)" onclick="openDuplicateCgManager()">
+        👥 중복 간병인 정리
+      </button>
       <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="checkPayRemind(true)">
         💰 급여 알림 테스트
       </button>
@@ -1235,6 +1238,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 </div>
 
 <!-- ══ CAREGIVER MODAL ══ -->
+<div class="overlay" id="dup-cg-overlay" onclick="closeOverlay('dup-cg-overlay',event)">
+  <div class="overlay-card" style="max-width:560px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="overlay-hd">
+      <h3>👥 중복 간병인 정리</h3>
+      <button class="btn btn-icon" onclick="closeOverlay('dup-cg-overlay')">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="dup-cg-body"></div>
+  </div>
+</div>
+
 <div class="overlay" id="cg-overlay" onclick="closeOverlay('cg-overlay',event)">
   <div class="modal" style="max-width:680px">
     <div class="modal-hd">
@@ -2621,12 +2636,14 @@ function confirmEndPatient(id) {
     cg.endDate = endDate;
     cg.endTime = endTime || cg.endTime || '';
     recalcDuration(cg, endDate); // 간병인 duration도 재계산
+    saveToAssignHistory(cg); // 근무 이력 저장
   } else if(cg) {
     if(endDate && cg.endDate !== endDate) {
       cg.endDate = endDate;
       cg.endTime = endTime || cg.endTime || '';
       recalcDuration(cg, endDate);
     }
+    saveToAssignHistory(cg);
   }
 
   // 종료보고 자동 생성 (실제 종료일 기준)
@@ -3418,9 +3435,24 @@ function renderCaregivers() {
           <button class="btn btn-sm" onclick="editCg('${cg.id}')">수정</button>
           ${cg.patientId&&cg.workStatus==='근무중'?`<button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="openEarlyTerminate('${cg.id}')">중도종료</button>`:''}
           ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
+          ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--blue);color:var(--blue)" onclick="toggleReassignSelect('${cg.id}')">🔄 재배정</button>`:''}
           <button class="btn btn-sm btn-red" onclick="deleteCg('${cg.id}')">삭제</button>
         </div>
       </div>
+      ${cg.workStatus==='종료'?`
+        <div id="reassign-select-${cg.id}" style="display:none;margin-top:8px;padding:10px;background:var(--teal-lt);border-radius:var(--rsm);border:1px solid rgba(11,122,110,.2)">
+          <div style="font-size:11px;font-weight:700;color:var(--teal);margin-bottom:6px">🔄 재배정할 환자 선택</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="reassign-pt-${cg.id}" style="flex:1;font-size:13px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--rsm);background:var(--surface)">
+              <option value="">— 환자를 선택하세요 —</option>
+              ${patients.filter(p=>p.status==='모집중').map(p=>`
+                <option value="${p.id}">${p.name} (${p.hospital||''}) · ${p.startDate||'날짜미정'} · ${p.duration||'미정'}${p.recruitInfo?' 🔄':''}
+                </option>`).join('')}
+            </select>
+            <button class="btn btn-teal btn-sm" onclick="confirmReassign('${cg.id}')">확인</button>
+            <button class="btn btn-sm" onclick="toggleReassignSelect('${cg.id}')">✕</button>
+          </div>
+        </div>`:''}
     </div>`).join('');
 }
 
@@ -3474,8 +3506,40 @@ function openCgDetail(id) {
       <button class="btn btn-teal btn-sm" onclick="closeOverlay('cg-overlay');editCg('${cg.id}')">수정</button>
       ${cg.patientId&&cg.workStatus==='근무중'?`<button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="closeOverlay('cg-overlay');openEarlyTerminate('${cg.id}')">중도종료</button>`:''}
       ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="cancelEarlyTerminate('${cg.id}')">↩ 종료취소</button>`:''}
+      ${cg.workStatus==='종료'?`<button class="btn btn-sm" style="border-color:var(--blue);color:var(--blue)" onclick="closeOverlay('cg-overlay');setTimeout(()=>{const el=document.getElementById('reassign-select-${cg.id}');if(el){el.style.display='block';el.scrollIntoView({behavior:'smooth',block:'center'});}},200)">🔄 재배정</button>`:''}
       <button class="btn btn-red btn-sm" onclick="deleteCg('${cg.id}')">삭제</button>
     </div>
+    ${(()=>{
+      const hist = cg.assignHistory;
+      if(!hist || !hist.length) return '';
+      return `<div class="hr"></div>
+        <div style="font-size:11px;font-weight:700;color:var(--gray);letter-spacing:.4px;margin-bottom:8px">📋 과거 담당 환자 (${hist.length}건)</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${hist.map(h => {
+            const totalPay = (h.pay && h.startDate && h.endDate) ? (() => {
+              const [sh=8,sm=0]=(h.startTime||'08:00').split(':').map(Number);
+              const [eh=8,em=0]=(h.endTime||'08:00').split(':').map(Number);
+              const sMs=new Date(h.startDate).getTime()+(sh*60+sm)*60000;
+              const eMs=new Date(h.endDate).getTime()+(eh*60+em)*60000;
+              const min=Math.round((eMs-sMs)/60000);
+              if(min<=0) return '';
+              const days=Math.floor(min/1440);
+              const otH=Math.floor((min%1440)/60);
+              const pay=Number(h.pay)*days+otH*10000;
+              return pay>0?pay.toLocaleString()+'원':'';
+            })() : '';
+            return `<div style="background:var(--surface2);border-radius:var(--rsm);padding:8px 12px;font-size:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+                <span style="font-weight:700">${h.patientName}</span>
+                <span style="color:var(--gray);font-size:10px">${h.recordedAt||''}</span>
+              </div>
+              <div style="color:var(--gray)">🏥 ${h.hospital||'—'}</div>
+              <div style="color:var(--gray)">📅 ${h.startDate||'—'} ${h.startTime||''} ~ ${h.endDate||'—'} ${h.endTime||''}</div>
+              ${totalPay?`<div style="color:var(--teal);font-weight:600;margin-top:2px">💵 ${totalPay}</div>`:''}
+            </div>`;
+          }).join('')}
+        </div>`;
+    })()}
     <div class="hr"></div>
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--teal);margin-bottom:6px">📝 메모</div>
     <textarea id="cg-memo-area" rows="3" placeholder="이 간병인에 대한 메모를 남겨주세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;line-height:1.7;resize:vertical;font-family:var(--sans);margin-bottom:6px">${cg.memo||''}</textarea>
@@ -3503,6 +3567,196 @@ function saveCgMemoFromModal(cgId) {
   save();
   toast('✅ ' + cg.name + ' 메모 저장됐어요');
 }
+// ─── 간병인 근무 이력 ───
+// 현재 담당 환자 정보를 assignHistory에 저장
+function saveToAssignHistory(cg) {
+  if(!cg.patientId && !cg.earlyEndPatientId) return;
+  const ptId = cg.patientId || cg.earlyEndPatientId;
+  const pt   = patients.find(p=>String(p.id)===String(ptId));
+  if(!pt) return;
+  if(!cg.assignHistory) cg.assignHistory = [];
+  // 이미 같은 환자 이력이 있으면 업데이트
+  const existing = cg.assignHistory.find(h=>String(h.patientId)===String(ptId)
+    && h.startDate === (cg.startDate||''));
+  if(existing) {
+    existing.endDate   = cg.endDate   || existing.endDate;
+    existing.endTime   = cg.endTime   || existing.endTime;
+    existing.recordedAt = new Date().toLocaleDateString('ko-KR');
+    return;
+  }
+  cg.assignHistory.unshift({
+    patientId:   String(ptId),
+    patientName: pt.name,
+    hospital:    pt.hospital || '',
+    startDate:   cg.startDate || '',
+    startTime:   cg.startTime || '',
+    endDate:     cg.endDate   || '',
+    endTime:     cg.endTime   || '',
+    pay:         cg.pay       || '',
+    recordedAt:  new Date().toLocaleDateString('ko-KR')
+  });
+}
+
+// ─── 중복 간병인 정리 ───
+function openDuplicateCgManager() {
+  // 이름 기준 그룹핑
+  const groups = {};
+  caregivers.forEach(cg => {
+    const key = cg.name.trim();
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(cg);
+  });
+
+  // 중복 그룹만 추출
+  const dupGroups = Object.entries(groups).filter(([,list]) => list.length > 1);
+
+  const bodyEl = document.getElementById('dup-cg-body');
+  if(!dupGroups.length) {
+    bodyEl.innerHTML = '<div class="empty" style="padding:2rem 0"><p>중복된 간병인이 없어요 ✅</p></div>';
+    document.getElementById('dup-cg-overlay').classList.add('open');
+    return;
+  }
+
+  const statusColor = { '근무중':'var(--teal)', '대기중':'var(--blue)', '종료':'var(--gray)' };
+  const statusOrder = { '근무중':0, '대기중':1, '종료':2 };
+
+  bodyEl.innerHTML = `
+    <p style="font-size:12px;color:var(--gray);margin-bottom:1rem;line-height:1.6">
+      같은 이름의 간병인이 <b>${dupGroups.length}그룹</b> 발견됐어요.<br>
+      ⭐ 표시된 레코드를 <b>유지</b>하고 나머지를 삭제할 수 있어요. (이력은 유지 레코드로 통합)
+    </p>
+    ${dupGroups.map(([name, list]) => {
+      // 상태 우선순위로 정렬 (근무중 > 대기중 > 종료)
+      const sorted = [...list].sort((a,b) =>
+        (statusOrder[a.workStatus]??9) - (statusOrder[b.workStatus]??9)
+      );
+      const keepId = sorted[0].id; // 기본 유지 대상
+
+      return `<div style="background:var(--surface2);border-radius:var(--r);padding:12px;margin-bottom:1rem">
+        <div style="font-size:14px;font-weight:900;margin-bottom:8px">👤 ${name} (${list.length}개 레코드)</div>
+        ${sorted.map((cg,i) => {
+          const pt = cg.patientId ? patients.find(p=>String(p.id)===String(cg.patientId)) : null;
+          const earlyPt = cg.earlyEndPatientId ? patients.find(p=>String(p.id)===String(cg.earlyEndPatientId)) : null;
+          return `<div style="background:var(--surface);border:2px solid ${i===0?'var(--teal)':'var(--border)'};border-radius:var(--rsm);padding:10px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px">
+            <input type="radio" name="keep-${name.replace(/\s/g,'_')}" value="${cg.id}" ${i===0?'checked':''} style="margin-top:3px;accent-color:var(--teal)">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                ${i===0?'<span style="font-size:10px;background:var(--teal);color:#fff;padding:1px 5px;border-radius:3px">유지</span>':''}
+                <span style="font-size:12px;font-weight:700;color:${statusColor[cg.workStatus]||'var(--gray)'}">${cg.workStatus||'—'}</span>
+                <span style="font-size:11px;color:var(--gray)">${cg.phone||''}</span>
+              </div>
+              <div style="font-size:11px;color:var(--gray);margin-top:3px;line-height:1.6">
+                📅 ${cg.startDate||'—'} ~ ${cg.endDate||'—'}<br>
+                🏥 ${pt?pt.name:earlyPt?earlyPt.name+'(종료)':cg.hospital||'—'}
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+        <button class="btn btn-sm btn-teal" style="width:100%;justify-content:center;margin-top:4px"
+          onclick="mergeDuplicateCg('${name.replace(/'/g,"\\'")}')">
+          이 그룹 정리 (선택 레코드 유지, 나머지 삭제)
+        </button>
+      </div>`;
+    }).join('')}
+  `;
+  document.getElementById('dup-cg-overlay').classList.add('open');
+}
+
+function mergeDuplicateCg(name) {
+  const group = caregivers.filter(cg=>cg.name.trim()===name);
+  if(group.length < 2) { toast('중복 레코드가 없어요'); return; }
+
+  const radio = document.querySelector(`input[name="keep-${name.replace(/\s/g,'_')}"]:checked`);
+  const keepId = radio ? radio.value : String(group[0].id);
+  const keepCg = group.find(cg=>String(cg.id)===keepId);
+  if(!keepCg) return;
+
+  const deleteCgs = group.filter(cg=>String(cg.id)!==keepId);
+
+  if(!keepCg.assignHistory) keepCg.assignHistory = [];
+
+  // 삭제되는 레코드의 이력 통합
+  deleteCgs.forEach(cg => {
+    // 현재 담당 환자도 이력으로 저장
+    if(cg.patientId || cg.earlyEndPatientId) {
+      saveToAssignHistory(cg);
+    }
+    // 기존 assignHistory 통합 (중복 제거)
+    (cg.assignHistory||[]).forEach(h => {
+      const dup = keepCg.assignHistory.find(kh =>
+        String(kh.patientId)===String(h.patientId) && kh.startDate===h.startDate
+      );
+      if(!dup) keepCg.assignHistory.push(h);
+    });
+    // 삭제 레코드가 연결한 환자 caregiverName 유지 레코드로 이전
+    if(cg.patientId) {
+      const pt = patients.find(p=>String(p.id)===String(cg.patientId));
+      if(pt && pt.status !== '종료') pt.caregiverName = keepCg.name;
+    }
+  });
+
+  // 날짜 순 정렬 (최신이 먼저)
+  keepCg.assignHistory.sort((a,b)=>(b.startDate||'').localeCompare(a.startDate||''));
+
+  // 중복 레코드 삭제
+  const deleteIds = new Set(deleteCgs.map(cg=>String(cg.id)));
+  caregivers = caregivers.filter(cg=>!deleteIds.has(String(cg.id)));
+
+  save();
+  closeOverlay('dup-cg-overlay');
+  renderCaregivers();
+  renderPatients();
+  renderDashboard();
+  updateSidebar();
+  toast(`✅ ${name} 이력 통합 완료! ${deleteCgs.length}개 중복 레코드가 1개로 합쳐졌어요`);
+}
+function toggleReassignSelect(cgId) {
+  const el = document.getElementById('reassign-select-' + cgId);
+  if(!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function confirmReassign(cgId) {
+  const cg = caregivers.find(c=>String(c.id)===String(cgId));
+  if(!cg) return;
+
+  const sel = document.getElementById('reassign-pt-' + cgId);
+  const ptId = sel ? sel.value : '';
+  if(!ptId) { toast('환자를 선택해주세요', true); return; }
+
+  const pt = patients.find(p=>String(p.id)===String(ptId));
+  if(!pt) return;
+
+  // 현재 담당 환자 이력 저장 (재배정 전)
+  saveToAssignHistory(cg);
+
+  // 간병인 재활성화
+  cg.workStatus = '대기중';
+  cg.patientId  = String(pt.id);
+  cg.startDate  = pt.startDate || '';
+  cg.startTime  = pt.startTime || '';
+  cg.endDate    = pt.endDate   || '';
+  cg.endTime    = pt.endTime   || '';
+  cg.pay        = pt.pay ? String(Math.max(0, Number(pt.pay)-5000)) : cg.pay;
+  cg.hospital   = pt.hospital  || cg.hospital;
+  delete cg.earlyEndPatientId;
+  delete cg.earlyEndSnapshot;
+  delete cg._snapshot;
+
+  // 환자 매칭완료
+  pt.status        = '매칭완료';
+  pt.recruited     = true;
+  pt.caregiverName = cg.name;
+  delete pt.recruitInfo;
+
+  save();
+  renderCaregivers();
+  renderPatients();
+  renderDashboard();
+  updateSidebar();
+  toast(`✅ ${cg.name} → ${pt.name} 재배정 완료! 대기중으로 활성화됐어요`);
+}
+
 function openEarlyTerminate(cgId) {
   const cg = caregivers.find(c=>String(c.id)===String(cgId));
   if(!cg) return;
@@ -3697,6 +3951,7 @@ function confirmEarlyTerminate(cgId) {
 
   // 간병인 duration도 재계산
   recalcDuration(cg, endDate);
+  saveToAssignHistory(cg); // 근무 이력 저장
 
   save();
   closeOverlay('cg-overlay');
