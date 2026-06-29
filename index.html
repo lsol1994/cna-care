@@ -1188,6 +1188,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <button class="btn btn-sm btn-teal" onclick="mergeAllDuplicateCg()">
         ⚡ 중복 간병인 전체 일괄 정리
       </button>
+      <button class="btn btn-sm" style="border-color:var(--blue);color:var(--blue)" onclick="convertExtendData()">
+        📅 기존 재모집→연장 데이터 변환
+      </button>
       <button class="btn btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="checkPayRemind(true)">
         💰 급여 알림 테스트
       </button>
@@ -1250,6 +1253,19 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       </button>
     </div>
     <div id="dup-cg-body"></div>
+  </div>
+</div>
+
+<!-- ══ 연장 모달 ══ -->
+<div class="overlay" id="extend-overlay" onclick="closeOverlay('extend-overlay',event)">
+  <div class="overlay-card" style="max-width:400px" onclick="event.stopPropagation()">
+    <div class="overlay-hd">
+      <h3 id="extend-title">📅 서비스 연장</h3>
+      <button class="btn btn-icon" onclick="closeOverlay('extend-overlay')">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="extend-body"></div>
   </div>
 </div>
 
@@ -1477,6 +1493,20 @@ function addDeletedCgId(id) {
 function clearDeletedCgIds() {
   localStorage.removeItem('cnc_deletedCgIds');
 }
+
+// 삭제된 환자 ID - 동일 방식
+function getDeletedPtIds() {
+  try { return new Set(JSON.parse(localStorage.getItem('cnc_deletedPtIds')||'[]')); }
+  catch(e) { return new Set(); }
+}
+function addDeletedPtId(id) {
+  const ids = getDeletedPtIds();
+  ids.add(String(id));
+  localStorage.setItem('cnc_deletedPtIds', JSON.stringify([...ids]));
+}
+function clearDeletedPtIds() {
+  localStorage.removeItem('cnc_deletedPtIds');
+}
 let _journalFmt    = 'xlsx';
 
 // ─── Firebase 초기화 (동적 로딩 - 실패해도 앱 동작) ───
@@ -1631,33 +1661,36 @@ function attachFirebaseListener() {
     const fbMembers    = fbToArr(d.members);
 
     if(fbPatients.length > 0) {
-      // Firebase 데이터가 현재보다 적으면 신규 항목 보존하며 병합
+      // 삭제 보호: localStorage에 기록된 환자 ID는 복원하지 않음
+      const deletedPtIds = getDeletedPtIds();
+      const filteredFbPt = deletedPtIds.size > 0
+        ? fbPatients.filter(dp => !deletedPtIds.has(String(dp.id)))
+        : fbPatients;
+
+      // Firebase 데이터에서도 삭제된 ID가 없으면 보호 해제
+      if(deletedPtIds.size > 0) {
+        const stillInFb = fbPatients.some(dp => deletedPtIds.has(String(dp.id)));
+        if(!stillInFb) clearDeletedPtIds();
+      }
+
       const mergePatients = (fbList) => fbList.map(dp => {
         if(!dp) return null;
         const local = patients.find(lp=>String(lp.id)===String(dp.id));
         if(!local) return dp;
-        // 종료 환자 보호
         if(local.status==='종료' && dp.status!=='종료') return local;
-        // 중도종료로 인해 로컬에서 caregiverName을 비운 경우 보호
-        // 해당 환자를 earlyEndPatientId로 참조하는 간병인이 있으면 caregiverName 클리어 유지
         const hasEarlyEndCg = caregivers.some(c =>
           (c.earlyEndPatientId || c.earlyEndSnapshot) &&
           String(c.earlyEndPatientId || (c.earlyEndSnapshot&&c.earlyEndSnapshot.patientId)) === String(dp.id)
         );
-        if(hasEarlyEndCg && local.status === '모집중' && dp.status === '매칭완료') {
-          // 로컬이 모집중(중도종료 처리됨)인데 FB가 매칭완료면 → 로컬 우선
-          return local;
-        }
+        if(hasEarlyEndCg && local.status==='모집중' && dp.status==='매칭완료') return local;
         return dp;
       }).filter(Boolean);
 
-      if(fbPatients.length >= patients.length) {
-        patients = mergePatients(fbPatients);
+      if(filteredFbPt.length >= patients.length) {
+        patients = mergePatients(filteredFbPt);
       } else {
-        const newPts = patients.filter(lp=>!fbPatients.find(dp=>String(dp.id)===String(lp.id)));
-        if(newPts.length > 0) {
-          patients = [...mergePatients(fbPatients), ...newPts];
-        }
+        const newPts = patients.filter(lp=>!filteredFbPt.find(dp=>String(dp.id)===String(lp.id)));
+        patients = newPts.length > 0 ? [...mergePatients(filteredFbPt), ...newPts] : mergePatients(filteredFbPt);
       }
       localStorage.setItem('cnc_patients', JSON.stringify(patients));
     }
@@ -2170,6 +2203,7 @@ function ptRowHTML(p) {
             <input type="checkbox" ${p.recruited?'checked':''} onchange="toggleRecruited('${p.id}',this.checked)"> 구인완료
           </label>
         </div>
+        ${p.status==='매칭완료'?`<button class="btn btn-sm" style="border-color:var(--blue);color:var(--blue)" onclick="openExtendPatient('${p.id}')">📅 연장</button>`:''}
         <button class="btn btn-sm" onclick="doCopy(patients.find(x=>String(x.id)==='${p.id}')?._editedPost || buildPost(patients.find(x=>String(x.id)==='${p.id}')))">
           <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>복사
         </button>
@@ -2690,8 +2724,14 @@ function confirmEndPatient(id) {
 
 function deletePatient(id) {
   if(!confirm('이 환자를 삭제할까요?')) return;
-  patients=patients.filter(x=>String(x.id)!==String(id));
-  save(); closeOverlay('pt-overlay'); renderPatients(); updateSidebar();
+  addDeletedPtId(String(id)); // Firebase 복원 방지
+  patients = patients.filter(x=>String(x.id)!==String(id));
+  // 연결된 간병인 patientId 클리어
+  caregivers.forEach(cg => {
+    if(String(cg.patientId)===String(id)) { cg.patientId=''; cg.workStatus='대기중'; }
+    if(String(cg.earlyEndPatientId)===String(id)) { delete cg.earlyEndPatientId; delete cg.earlyEndSnapshot; }
+  });
+  save(); closeOverlay('pt-overlay'); renderPatients(); renderCaregivers(); updateSidebar();
   toast('삭제됐어요');
 }
 
@@ -3797,6 +3837,176 @@ function mergeDuplicateCg(name) {
   updateSidebar();
   toast(`✅ ${name} 이력 통합 완료! ${deleteCgs.length}개 중복 레코드가 1개로 합쳐졌어요`);
 }
+// ─── 기존 재모집→연장 데이터 변환 ───
+// 같은 환자 + 같은 간병인 이름이 반복 등록된 경우 → 연장으로 통합
+function convertExtendData() {
+  var converted = 0;
+  var log = [];
+
+  // 이름 기준 간병인 그룹핑
+  var groups = {};
+  caregivers.forEach(function(cg) {
+    var key = cg.name.trim();
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(cg);
+  });
+
+  Object.entries(groups).forEach(function(entry) {
+    var name = entry[0];
+    var list = entry[1];
+    if(list.length < 2) return;
+
+    // 같은 환자에 연결된 레코드끼리 묶기
+    var ptGroups = {};
+    list.forEach(function(cg) {
+      var ptId = cg.patientId || cg.earlyEndPatientId
+        || (cg.earlyEndSnapshot && cg.earlyEndSnapshot.patientId) || '';
+      if(!ptId) return;
+      if(!ptGroups[ptId]) ptGroups[ptId] = [];
+      ptGroups[ptId].push(cg);
+    });
+
+    Object.entries(ptGroups).forEach(function(pe) {
+      var ptId = pe[0];
+      var ptCgs = pe[1];
+      if(ptCgs.length < 2) return;
+
+      var pt = patients.find(function(p){ return String(p.id)===String(ptId); });
+      if(!pt) return;
+
+      // 시작일 순 정렬
+      ptCgs.sort(function(a,b){ return (a.startDate||'').localeCompare(b.startDate||''); });
+
+      // 가장 마지막(최신) 레코드를 유지
+      var keepCg = ptCgs[ptCgs.length-1];
+      var delCgs = ptCgs.slice(0, ptCgs.length-1);
+
+      // 삭제 레코드를 이력으로 통합
+      if(!keepCg.assignHistory) keepCg.assignHistory = [];
+      delCgs.forEach(function(cg) {
+        saveToAssignHistory(cg, ptId);
+        (cg.assignHistory||[]).forEach(function(h) {
+          var dup = keepCg.assignHistory.find(function(kh){
+            return String(kh.patientId)===String(h.patientId) && kh.startDate===h.startDate;
+          });
+          if(!dup) keepCg.assignHistory.push(h);
+        });
+        addDeletedCgId(String(cg.id));
+      });
+
+      // 날짜 순 정렬
+      keepCg.assignHistory.sort(function(a,b){ return (b.startDate||'').localeCompare(a.startDate||''); });
+
+      // 환자 종료일 = 유지 레코드의 종료일 (가장 긴 기간)
+      if(keepCg.endDate && (!pt.endDate || keepCg.endDate > pt.endDate)) {
+        pt.endDate = keepCg.endDate;
+        pt.endTime = keepCg.endTime || '';
+      }
+
+      // 환자의 recruitInfo 제거 (재모집→연장으로 변환)
+      if(pt.recruitInfo) {
+        delete pt.recruitInfo;
+        converted++;
+      }
+
+      // 환자 caregiverName 유지 레코드 이름으로 통일
+      if(pt.status !== '종료') {
+        pt.caregiverName = keepCg.name;
+      }
+
+      log.push(name + ' ↔ ' + pt.name + ' (' + delCgs.length + '개 통합)');
+      converted++;
+    });
+  });
+
+  // 삭제된 ID 제거
+  var deletedIds = getDeletedCgIds();
+  caregivers = caregivers.filter(function(cg){ return !deletedIds.has(String(cg.id)); });
+
+  if(converted === 0) {
+    toast('변환할 데이터가 없어요 ✅');
+    return;
+  }
+
+  save();
+  renderCaregivers();
+  renderPatients();
+  renderDashboard();
+  updateSidebar();
+
+  var msg = '✅ 변환 완료!\n' + log.join('\n');
+  alert(msg);
+  toast('✅ ' + converted + '건 연장으로 변환됐어요');
+}
+function openExtendPatient(ptId) {
+  var p  = patients.find(function(x){return String(x.id)===String(ptId);});
+  if(!p) return;
+  var cg = caregivers.find(function(c){return String(c.patientId)===String(ptId)&&c.workStatus!=='종료';});
+  var cgName = cg ? cg.name : '';
+  document.getElementById('extend-title').textContent = '📅 ' + p.name + ' 서비스 연장';
+  var curEnd  = (p.endDate||'미정') + ' ' + (p.endTime||'');
+  var cgHtml  = cgName ? '<div>담당 간병인: <b style="color:var(--teal)">' + cgName + '</b></div>' : '';
+  var sameOpt = cgName ? '<option value="same">✅ ' + cgName + ' (동일 간병인 연장)</option>' : '<option value="same">간병인 없음</option>';
+  var sdEsc = (p.startDate||'').replace(/'/g,"\\'");
+  var ptIdEsc = String(ptId).replace(/'/g,"\\'");
+  document.getElementById('extend-body').innerHTML = '<div style="background:var(--surface2);border-radius:var(--rsm);padding:10px 12px;margin-bottom:1rem;font-size:12px;color:var(--gray)">'
+    + '<div>현재 마감: <b style="color:var(--black)">' + curEnd + '</b></div>'
+    + '<div>현재 기간: <b style="color:var(--black)">' + (p.duration||'미정') + '</b></div>'
+    + cgHtml + '</div>'
+    + '<div class="field"><label>새 마감일 <span style="color:var(--red)">*</span></label>'
+    + '<input type="date" id="ext-endDate" value="' + (p.endDate||'') + '" oninput="onExtDateChange(&quot;' + sdEsc + '&quot;)"></div>'
+    + '<div class="field"><label>새 마감시간</label>'
+    + '<input type="time" id="ext-endTime" value="' + (p.endTime||'') + '"></div>'
+    + '<div style="background:var(--teal-lt);border-radius:var(--rsm);padding:8px 12px;margin-bottom:.875rem;font-size:12px;color:var(--teal);font-weight:600;min-height:32px" id="ext-preview"></div>'
+    + '<div class="field"><label>간병인 변경</label>'
+    + '<select id="ext-cg-change" style="font-size:13px;padding:8px;border:1px solid var(--border);border-radius:var(--rsm);width:100%">'
+    + sameOpt
+    + '<option value="new">🔄 다른 간병인으로 교체 (재모집 처리)</option></select></div>'
+    + '<div style="display:flex;gap:8px;margin-top:1rem">'
+    + '<button class="btn btn-teal" style="flex:1;justify-content:center" onclick="confirmExtend(&quot;' + ptIdEsc + '&quot;)">연장 확정</button>'
+    + '<button class="btn" onclick="closeOverlay(&quot;extend-overlay&quot;)">취소</button></div>';
+  document.getElementById('extend-overlay').classList.add('open');
+}
+
+function onExtDateChange(startDate) {
+  var d = document.getElementById('ext-endDate')&&document.getElementById('ext-endDate').value;
+  var prev = document.getElementById('ext-preview');
+  if(!prev) return;
+  if(!d||!startDate){prev.textContent='';return;}
+  var days = Math.round((parseLocalDate(d)-parseLocalDate(startDate))/86400000);
+  if(days<0){prev.textContent='⚠️ 시작일보다 이전입니다';prev.style.color='var(--red)';}
+  else{prev.textContent='→ 연장 후 기간: '+days+'일';prev.style.color='var(--teal)';}
+}
+
+function confirmExtend(ptId) {
+  var p = patients.find(function(x){return String(x.id)===String(ptId);});
+  if(!p) return;
+  var newEndDate = document.getElementById('ext-endDate')&&document.getElementById('ext-endDate').value;
+  var newEndTime = (document.getElementById('ext-endTime')&&document.getElementById('ext-endTime').value)||'';
+  var cgChange   = document.getElementById('ext-cg-change')&&document.getElementById('ext-cg-change').value;
+  if(!newEndDate){toast('새 마감일을 입력해주세요',true);return;}
+  var cg   = caregivers.find(function(c){return String(c.patientId)===String(ptId)&&c.workStatus!=='종료';});
+  var days = p.startDate ? Math.round((parseLocalDate(newEndDate)-parseLocalDate(p.startDate))/86400000) : null;
+
+  if(cgChange==='same'||!cgChange) {
+    p.endDate = newEndDate; p.endTime = newEndTime;
+    if(days!==null&&days>=0) p.duration = days+'일';
+    delete p.recruitInfo;
+    if(cg){cg.endDate=newEndDate;cg.endTime=newEndTime;if(days!==null&&days>=0)cg.duration=days+'일';}
+    save(); closeOverlay('extend-overlay'); renderPatients(); renderCaregivers();
+    toast('✅ '+p.name+' 연장됐어요 → '+newEndDate+' '+newEndTime);
+  } else {
+    if(cg){var today=todayStr();cg.workStatus='종료';cg.endDate=today;recalcDuration(cg,today);saveToAssignHistory(cg);}
+    p.endDate=newEndDate;p.endTime=newEndTime;
+    if(days!==null&&days>=0) p.duration=days+'일';
+    p.status='모집중';p.recruited=false;p.caregiverName='';
+    p.recruitInfo={startDate:todayStr(),startTime:'',endDate:newEndDate,
+      duration:days!==null&&days>=0?days+'일':'',reason:'연장 후 간병인 교체'};
+    save(); closeOverlay('extend-overlay'); renderPatients(); renderCaregivers(); renderDashboard(); updateSidebar();
+    toast('✅ '+p.name+' 연장 + 재모집 처리됐어요');
+  }
+}
+
 function toggleReassignSelect(cgId) {
   const el = document.getElementById('reassign-select-' + cgId);
   if(!el) return;
