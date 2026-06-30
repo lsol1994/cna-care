@@ -4558,21 +4558,59 @@ function selectRptPt(ptId) {
 // ── 환자에 매칭된 간병인 찾기 (공통 헬퍼) ──
 function findCgForPatient(p) {
   if(!p) return null;
-  // 1순위: patientId로 연결된 간병인 (모든 상태 포함)
-  let cg = caregivers.find(c => String(c.patientId) === String(p.id));
+
+  // 종료된 환자: 같은 기간에 근무한 간병인 찾기
+  if(p.status === '종료') {
+    // 1순위: 시작일 + 종료일 모두 일치 (가장 정확)
+    let cg = caregivers.find(c =>
+      c.startDate === p.startDate &&
+      c.endDate   === p.endDate &&
+      c.workStatus === '종료'
+    );
+    if(cg) return cg;
+
+    // 2순위: 시작일만 일치 + 종료 상태
+    cg = caregivers.find(c =>
+      c.startDate === p.startDate &&
+      c.workStatus === '종료'
+    );
+    if(cg) return cg;
+
+    // 3순위: earlyEndPatientId로 이 환자를 참조 (중도종료)
+    cg = caregivers.find(c =>
+      String(c.earlyEndPatientId) === String(p.id) ||
+      (c.earlyEndSnapshot && String(c.earlyEndSnapshot.patientId) === String(p.id))
+    );
+    if(cg) return cg;
+
+    // 4순위: patientId 연결 + 종료
+    cg = caregivers.find(c =>
+      String(c.patientId) === String(p.id) && c.workStatus === '종료'
+    );
+    if(cg) return cg;
+
+    return null;
+  }
+
+  // 활성 환자: 근무중/대기중 간병인 우선
+  let cg = caregivers.find(c =>
+    String(c.patientId) === String(p.id) &&
+    (c.workStatus === '근무중' || c.workStatus === '대기중')
+  );
   if(cg) return cg;
-  // 2순위: 환자의 caregiverName과 일치하는 간병인
+
+  cg = caregivers.find(c => String(c.patientId) === String(p.id));
+  if(cg) return cg;
+
   if(p.caregiverName) {
-    cg = caregivers.find(c => c.name === p.caregiverName.trim());
+    cg = caregivers.find(c =>
+      c.name === p.caregiverName.trim() &&
+      (c.workStatus === '근무중' || c.workStatus === '대기중')
+    );
     if(cg) return cg;
   }
-  // 3순위: 같은 병원 + 시작일 일치
-  cg = caregivers.find(c =>
-    c.hospital && p.hospital &&
-    c.hospital.includes(c.hospital.substring(0,4)) &&
-    c.startDate === p.startDate
-  );
-  return cg || null;
+
+  return null;
 }
 
 // ── 매칭 보고 메시지 생성 ──
