@@ -1483,6 +1483,32 @@ let selRptPt       = null;
 let _fbReady       = false;
 let _fbPause       = false;
 
+// 현재 세션에서 앱을 통해 새로 추가된 ID (Firebase에 아직 없을 수 있음)
+// Firebase 콘솔에서 삭제된 항목과 구별하기 위해 사용
+let _newLocalPtIds = new Set();
+let _newLocalCgIds = new Set();
+
+// 최근 로컬에서 수정된 항목 ID + 시각 (Firebase 덮어쓰기 방지)
+const _editedPtMap = new Map(); // id → 수정 시각(ms)
+const _editedCgMap = new Map();
+const EDIT_PROTECT_MS = 10000; // 10초 보호
+
+function markPtEdited(id) { _editedPtMap.set(String(id), Date.now()); }
+function markCgEdited(id) { _editedCgMap.set(String(id), Date.now()); }
+function isPtEditProtected(id) {
+  const t = _editedPtMap.get(String(id));
+  return t && (Date.now() - t) < EDIT_PROTECT_MS;
+}
+function isCgEditProtected(id) {
+  const t = _editedCgMap.get(String(id));
+  return t && (Date.now() - t) < EDIT_PROTECT_MS;
+}
+
+// 삭제 보호 해제 카운터 - 연속 3회 확인 후 해제 (단발 캐시 스냅샷 오탐 방지)
+let _ptDeleteConfirmCount = 0;
+let _cgDeleteConfirmCount = 0;
+const DELETE_CONFIRM_THRESHOLD = 3;
+
 // 삭제된 간병인 ID - localStorage에 영구 저장 (Firebase 재연결 시에도 복원 방지)
 function getDeletedCgIds() {
   try { return new Set(JSON.parse(localStorage.getItem('cnc_deletedCgIds')||'[]')); }
@@ -1671,16 +1697,26 @@ function attachFirebaseListener() {
         ? fbPatients.filter(dp => !deletedPtIds.has(String(dp.id)))
         : fbPatients;
 
-      // Firebase 데이터에서도 삭제된 ID가 없으면 보호 해제
+      // 삭제 보호 해제: 연속 3회 Firebase에서 확인 후 해제 (캐시 오탐 방지)
       if(deletedPtIds.size > 0) {
         const stillInFb = fbPatients.some(dp => deletedPtIds.has(String(dp.id)));
-        if(!stillInFb) clearDeletedPtIds();
+        if(stillInFb) {
+          _ptDeleteConfirmCount = 0;
+        } else {
+          _ptDeleteConfirmCount++;
+          if(_ptDeleteConfirmCount >= DELETE_CONFIRM_THRESHOLD) {
+            clearDeletedPtIds();
+            _ptDeleteConfirmCount = 0;
+          }
+        }
       }
 
       const mergePatients = (fbList) => fbList.map(dp => {
         if(!dp) return null;
         const local = patients.find(lp=>String(lp.id)===String(dp.id));
         if(!local) return dp;
+        // 최근 로컬에서 수정된 항목 → 로컬 우선 (Firebase 덮어쓰기 방지)
+        if(isPtEditProtected(dp.id)) return local;
         if(local.status==='종료' && dp.status!=='종료') return local;
         const hasEarlyEndCg = caregivers.some(c =>
           (c.earlyEndPatientId || c.earlyEndSnapshot) &&
@@ -1693,9 +1729,18 @@ function attachFirebaseListener() {
       if(filteredFbPt.length >= patients.length) {
         patients = mergePatients(filteredFbPt);
       } else {
-        const newPts = patients.filter(lp=>!filteredFbPt.find(dp=>String(dp.id)===String(lp.id)));
-        patients = newPts.length > 0 ? [...mergePatients(filteredFbPt), ...newPts] : mergePatients(filteredFbPt);
+        // 로컬에만 있는 항목 중 현재 세션에서 실제로 추가한 것만 보존
+        // (Firebase 콘솔에서 삭제된 항목은 복원하지 않음)
+        const newPts = patients.filter(lp =>
+          !filteredFbPt.find(dp=>String(dp.id)===String(lp.id)) &&
+          _newLocalPtIds.has(String(lp.id))  // ← 세션 내 신규만 보호
+        );
+        patients = newPts.length > 0
+          ? [...mergePatients(filteredFbPt), ...newPts]
+          : mergePatients(filteredFbPt);
       }
+      // Firebase에 올라간 항목은 신규 보호 목록에서 제거
+      filteredFbPt.forEach(dp => _newLocalPtIds.delete(String(dp.id)));
       localStorage.setItem('cnc_patients', JSON.stringify(patients));
     }
     if(fbCaregivers.length > 0) {
@@ -1705,11 +1750,18 @@ function attachFirebaseListener() {
         ? fbCaregivers.filter(dc => !deletedIds.has(String(dc.id)))
         : fbCaregivers;
 
-      // Firebase 데이터에서도 삭제된 ID가 없으면 보호 해제
-      // (Firebase가 새 데이터를 정상 서빙하고 있다는 증거)
+      // 삭제 보호 해제: 연속 3회 Firebase에서 확인 후 해제
       if(deletedIds.size > 0) {
         const stillInFb = fbCaregivers.some(dc => deletedIds.has(String(dc.id)));
-        if(!stillInFb) clearDeletedCgIds();
+        if(stillInFb) {
+          _cgDeleteConfirmCount = 0;
+        } else {
+          _cgDeleteConfirmCount++;
+          if(_cgDeleteConfirmCount >= DELETE_CONFIRM_THRESHOLD) {
+            clearDeletedCgIds();
+            _cgDeleteConfirmCount = 0;
+          }
+        }
       }
 
       function mergeCg(fbList) {
@@ -1717,6 +1769,8 @@ function attachFirebaseListener() {
           if(!dc) return null;
           const local = caregivers.find(lc=>String(lc.id)===String(dc.id));
           if(!local) return dc;
+          // 최근 로컬에서 수정된 항목 → 로컬 우선
+          if(isCgEditProtected(dc.id)) return local;
           if(local.insuranceActive && !dc.insuranceActive) {
             dc.insuranceActive     = local.insuranceActive;
             dc.insuranceExpiry     = local.insuranceExpiry;
@@ -1732,9 +1786,16 @@ function attachFirebaseListener() {
       if(filteredFb.length >= caregivers.length) {
         caregivers = mergeCg(filteredFb);
       } else {
-        const newCgs = caregivers.filter(lc=>!filteredFb.find(dc=>String(dc.id)===String(lc.id)));
-        caregivers = newCgs.length > 0 ? [...mergeCg(filteredFb), ...newCgs] : mergeCg(filteredFb);
+        const newCgs = caregivers.filter(lc =>
+          !filteredFb.find(dc=>String(dc.id)===String(lc.id)) &&
+          _newLocalCgIds.has(String(lc.id))  // ← 세션 내 신규만 보호
+        );
+        caregivers = newCgs.length > 0
+          ? [...mergeCg(filteredFb), ...newCgs]
+          : mergeCg(filteredFb);
       }
+      // Firebase에 올라간 항목은 신규 보호 목록에서 제거
+      filteredFb.forEach(dc => _newLocalCgIds.delete(String(dc.id)));
       localStorage.setItem('cnc_cg', JSON.stringify(caregivers));
     }
     if(fbAttendance.length > 0) {
@@ -2064,6 +2125,7 @@ function registerPatient() {
   const p = getFormPatient();
   if(!p.name||!p.hospital||!p.diagnosis) { toast('이름, 병원, 병증은 필수입니다',true); return; }
   patients.unshift(p);
+  _newLocalPtIds.add(String(p.id)); // Firebase 저장 전까지 신규로 보호
   save();
   sendSheets({type:'patient', ...p});
   toast('✅ 환자 등록 완료! Sheets 전송했어요');
@@ -2583,6 +2645,7 @@ function savePatientEdit(id) {
   if(p._editedPost) {
     p._editedPost = smartUpdatePost(p._editedPost, p);
   }
+  markPtEdited(id); // Firebase 덮어쓰기 방지 (10초)
   save();
   renderPatients();
   renderCaregivers();
@@ -3341,8 +3404,10 @@ function saveCg() {
   if(editCgId){
     const idx=caregivers.findIndex(x=>String(x.id)===String(editCgId));
     if(idx>-1) caregivers[idx]=cg;
+    markCgEdited(editCgId); // Firebase 덮어쓰기 방지 (10초)
   } else {
     caregivers.unshift(cg);
+    _newLocalCgIds.add(String(cg.id)); // Firebase 저장 전까지 신규로 보호
   }
 
   // 환자 연결 및 상태 업데이트
