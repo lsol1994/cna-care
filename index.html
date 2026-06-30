@@ -794,15 +794,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     <!-- 메시지 미리보기 -->
     <div class="sticky-col">
       <div class="card" id="rpt-preview-card" style="display:none">
-        <div class="card-hd"><span class="dot"></span>보고 메시지 <span style="font-size:10px;font-weight:400;color:var(--gray);text-transform:none;letter-spacing:0">직접 수정 가능</span></div>
+        <div class="card-hd">
+          <span class="dot"></span>보고 메시지 <span style="font-size:10px;font-weight:400;color:var(--gray);text-transform:none;letter-spacing:0">직접 수정 가능</span>
+        </div>
         <div style="font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px" id="rpt-title-label"></div>
         <textarea id="rpt-preview" style="width:100%;min-height:240px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--rsm);padding:.875rem 1rem;font-size:13px;line-height:1.95;font-family:var(--sans);color:var(--black);resize:vertical"></textarea>
-        <div style="display:flex;gap:8px;margin-top:.875rem">
-          <button class="copy-btn" style="margin:0;flex:1" onclick="copyReportMsg()">
+        <div style="display:flex;gap:8px;margin-top:.875rem;flex-wrap:wrap">
+          <button class="copy-btn" style="margin:0;flex:1;min-width:100px" onclick="copyReportMsg()">
             <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>메시지 복사
           </button>
+          <button class="btn btn-sm" onclick="regenerateReport()" style="color:var(--amber);border-color:var(--amber)">🔄 재생성</button>
           <button class="btn btn-teal" onclick="saveReportLog()">
-            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/></svg>발송기록 저장
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/></svg>저장
           </button>
         </div>
       </div>
@@ -4528,10 +4531,14 @@ function selectRptPtType(ptId, type) {
   selRptPt = patients.find(p=>String(p.id)===String(ptId));
   if(!selRptPt) return;
   let msg = '';
-  if(type==='matched') msg = buildMatchReport(selRptPt);
-  else if(type==='ended') msg = buildEndReport(selRptPt);
-  else if(type==='replace') {
-    // 가장 최근 교체보고 로그에서 메시지 불러오기
+  if(type==='matched') {
+    const log = reportLogs.find(l=>String(l.patientId)===String(ptId)&&l.type==='matched');
+    msg = log ? log.msg : buildMatchReport(selRptPt);
+  } else if(type==='ended') {
+    // 저장된 종료보고 로그 있으면 우선 사용 (수정 가능)
+    const log = reportLogs.find(l=>String(l.patientId)===String(ptId)&&l.type==='ended');
+    msg = log ? log.msg : buildEndReport(selRptPt);
+  } else if(type==='replace') {
     const log = reportLogs.find(l=>String(l.patientId)===String(ptId)&&l.type==='replace');
     msg = log ? log.msg : buildReplaceReport(selRptPt, '', '');
   }
@@ -4865,18 +4872,37 @@ function copyReportMsg() {
   doCopy(txt);
 }
 
+// 보고서 재생성 (현재 데이터 기준으로 새로 빌드)
+function regenerateReport() {
+  if(!selRptPt) return;
+  let msg = '';
+  if(rptType === 'matched')  msg = buildMatchReport(selRptPt);
+  else if(rptType === 'ended')   msg = buildEndReport(selRptPt);
+  else if(rptType === 'replace') msg = buildReplaceReport(selRptPt, '', '');
+  else msg = buildMatchReport(selRptPt);
+  document.getElementById('rpt-preview').value = msg;
+  toast('✅ 현재 데이터로 재생성됐어요. 수정 후 저장하세요.');
+}
+
 function saveReportLog() {
   if(!selRptPt){ toast('환자를 먼저 선택해주세요',true); return; }
-  const type = document.getElementById('rpt-type')?.value || 'matched';
+  const type = document.getElementById('rpt-type')?.value || rptType || 'matched';
   const now  = new Date();
   const timeStr = now.toLocaleDateString('ko-KR')+' '+now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
-  reportLogs.unshift({
-    patientId:   String(selRptPt.id),
-    patientName: selRptPt.name,
-    type,
-    time:  timeStr,
-    msg:   document.getElementById('rpt-preview')?.value||''
-  });
+  const msg = document.getElementById('rpt-preview')?.value||'';
+
+  // 같은 환자 + 같은 타입 로그가 있으면 업데이트, 없으면 새로 추가
+  const existing = reportLogs.find(l=>String(l.patientId)===String(selRptPt.id)&&l.type===type);
+  if(existing) {
+    existing.msg  = msg;
+    existing.time = timeStr;
+  } else {
+    reportLogs.unshift({
+      patientId:   String(selRptPt.id),
+      patientName: selRptPt.name,
+      type, time: timeStr, msg
+    });
+  }
   save(); renderReportLog(); toast('✅ 보고 기록이 저장됐어요');
 }
 
