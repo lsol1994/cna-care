@@ -4439,6 +4439,7 @@ function deleteCg(id) {
   }
 
   caregivers = caregivers.filter(x=>String(x.id)!==String(id));
+  addDeletedCgId(String(id)); // Firebase 복원 방지
   save();
   renderCaregivers();
   renderPatients();
