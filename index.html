@@ -1509,33 +1509,67 @@ let _ptDeleteConfirmCount = 0;
 let _cgDeleteConfirmCount = 0;
 const DELETE_CONFIRM_THRESHOLD = 3;
 
-// 삭제된 간병인 ID - localStorage에 영구 저장 (Firebase 재연결 시에도 복원 방지)
+// 삭제된 간병인 ID - localStorage에 영구 저장
+// 자동 만료 없음 - Firebase에서 실제로 사라진 것 확인 후에만 해제
+const DELETED_PROTECT_MS = 60 * 60 * 1000; // 사용 안 함 (하위 호환용)
+
 function getDeletedCgIds() {
-  try { return new Set(JSON.parse(localStorage.getItem('cnc_deletedCgIds')||'[]')); }
-  catch(e) { return new Set(); }
+  try {
+    const raw = JSON.parse(localStorage.getItem('cnc_deletedCgIds') || '{}');
+    // 객체면 그대로, 배열이면 객체로 변환 (구버전 호환)
+    if(Array.isArray(raw)) {
+      const obj = {};
+      raw.forEach(id => { obj[id] = Date.now(); });
+      localStorage.setItem('cnc_deletedCgIds', JSON.stringify(obj));
+      return new Set(raw.map(String));
+    }
+    return new Set(Object.keys(raw));
+  } catch(e) { return new Set(); }
 }
 function addDeletedCgId(id) {
-  const ids = getDeletedCgIds();
-  ids.add(String(id));
-  localStorage.setItem('cnc_deletedCgIds', JSON.stringify([...ids]));
+  try {
+    const raw = JSON.parse(localStorage.getItem('cnc_deletedCgIds') || '{}');
+    if(Array.isArray(raw)) {
+      const obj = {};
+      raw.forEach(i => { obj[i] = Date.now(); });
+      raw[String(id)] = Date.now();
+      localStorage.setItem('cnc_deletedCgIds', JSON.stringify(obj));
+    } else {
+      raw[String(id)] = Date.now();
+      localStorage.setItem('cnc_deletedCgIds', JSON.stringify(raw));
+    }
+  } catch(e) {}
 }
-function clearDeletedCgIds() {
-  localStorage.removeItem('cnc_deletedCgIds');
-}
+function clearDeletedCgIds() { localStorage.removeItem('cnc_deletedCgIds'); }
 
 // 삭제된 환자 ID - 동일 방식
 function getDeletedPtIds() {
-  try { return new Set(JSON.parse(localStorage.getItem('cnc_deletedPtIds')||'[]')); }
-  catch(e) { return new Set(); }
+  try {
+    const raw = JSON.parse(localStorage.getItem('cnc_deletedPtIds') || '{}');
+    if(Array.isArray(raw)) {
+      const obj = {};
+      raw.forEach(id => { obj[id] = Date.now(); });
+      localStorage.setItem('cnc_deletedPtIds', JSON.stringify(obj));
+      return new Set(raw.map(String));
+    }
+    return new Set(Object.keys(raw));
+  } catch(e) { return new Set(); }
 }
 function addDeletedPtId(id) {
-  const ids = getDeletedPtIds();
-  ids.add(String(id));
-  localStorage.setItem('cnc_deletedPtIds', JSON.stringify([...ids]));
+  try {
+    const raw = JSON.parse(localStorage.getItem('cnc_deletedPtIds') || '{}');
+    if(Array.isArray(raw)) {
+      const obj = {};
+      raw.forEach(i => { obj[i] = Date.now(); });
+      obj[String(id)] = Date.now();
+      localStorage.setItem('cnc_deletedPtIds', JSON.stringify(obj));
+    } else {
+      raw[String(id)] = Date.now();
+      localStorage.setItem('cnc_deletedPtIds', JSON.stringify(raw));
+    }
+  } catch(e) {}
 }
-function clearDeletedPtIds() {
-  localStorage.removeItem('cnc_deletedPtIds');
-}
+function clearDeletedPtIds() { localStorage.removeItem('cnc_deletedPtIds'); }
 let _journalFmt    = 'xlsx';
 
 // ─── Firebase 초기화 (동적 로딩 - 실패해도 앱 동작) ───
@@ -1691,24 +1725,15 @@ function attachFirebaseListener() {
     const fbMembers    = fbToArr(d.members);
 
     if(fbPatients.length > 0) {
-      // 삭제 보호: localStorage에 기록된 환자 ID는 복원하지 않음
+      // 삭제 보호: Firebase에서 실제로 사라진 것 확인 후에만 해제
       const deletedPtIds = getDeletedPtIds();
       const filteredFbPt = deletedPtIds.size > 0
         ? fbPatients.filter(dp => !deletedPtIds.has(String(dp.id)))
         : fbPatients;
-
-      // 삭제 보호 해제: 연속 3회 Firebase에서 확인 후 해제 (캐시 오탐 방지)
+      // Firebase에 삭제된 ID가 없으면 보호 해제 (영구 삭제 확인)
       if(deletedPtIds.size > 0) {
         const stillInFb = fbPatients.some(dp => deletedPtIds.has(String(dp.id)));
-        if(stillInFb) {
-          _ptDeleteConfirmCount = 0;
-        } else {
-          _ptDeleteConfirmCount++;
-          if(_ptDeleteConfirmCount >= DELETE_CONFIRM_THRESHOLD) {
-            clearDeletedPtIds();
-            _ptDeleteConfirmCount = 0;
-          }
-        }
+        if(!stillInFb) clearDeletedPtIds();
       }
 
       const mergePatients = (fbList) => fbList.map(dp => {
@@ -1744,24 +1769,15 @@ function attachFirebaseListener() {
       localStorage.setItem('cnc_patients', JSON.stringify(patients));
     }
     if(fbCaregivers.length > 0) {
-      // 삭제 보호: localStorage에 기록된 ID는 Firebase에서 복원하지 않음
+      // 삭제 보호: Firebase에서 실제로 사라진 것 확인 후에만 해제
       const deletedIds = getDeletedCgIds();
       const filteredFb = deletedIds.size > 0
         ? fbCaregivers.filter(dc => !deletedIds.has(String(dc.id)))
         : fbCaregivers;
-
-      // 삭제 보호 해제: 연속 3회 Firebase에서 확인 후 해제
+      // Firebase에 삭제된 ID가 없으면 보호 해제 (영구 삭제 확인)
       if(deletedIds.size > 0) {
         const stillInFb = fbCaregivers.some(dc => deletedIds.has(String(dc.id)));
-        if(stillInFb) {
-          _cgDeleteConfirmCount = 0;
-        } else {
-          _cgDeleteConfirmCount++;
-          if(_cgDeleteConfirmCount >= DELETE_CONFIRM_THRESHOLD) {
-            clearDeletedCgIds();
-            _cgDeleteConfirmCount = 0;
-          }
-        }
+        if(!stillInFb) clearDeletedCgIds();
       }
 
       function mergeCg(fbList) {
@@ -3400,6 +3416,28 @@ function saveCg() {
   const timeOk=t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
   if(cg.startTime&&!timeOk(cg.startTime)){toast('시작 시간이 올바르지 않아요 (00:00~23:59)',true);return;}
   if(cg.endTime&&!timeOk(cg.endTime)){toast('마감 시간이 올바르지 않아요 (00:00~23:59)',true);return;}
+
+  // ── 신규 등록 시 이름 중복 감지 ──
+  if(!editCgId) {
+    const sameName = caregivers.filter(c => c.name.trim() === cg.name.trim());
+    if(sameName.length > 0) {
+      const active  = sameName.find(c => c.workStatus === '근무중' || c.workStatus === '대기중');
+      const ended   = sameName.filter(c => c.workStatus === '종료');
+      if(active) {
+        toast(`⚠️ "${cg.name}" 간병인이 이미 ${active.workStatus} 중이에요!\n수정이 필요하면 해당 카드에서 [수정] 버튼을 사용해주세요.`, true);
+        return; // 완전 차단
+      }
+      if(ended.length > 0) {
+        const go = confirm(
+          `"${cg.name}" 간병인이 이미 등록되어 있어요 (종료 ${ended.length}건).\n\n` +
+          `새로 등록하면 중복 레코드가 생겨요!\n` +
+          `종료된 간병인 카드의 [🔄 재배정] 버튼을 사용하면 이력이 깔끔하게 유지돼요.\n\n` +
+          `그래도 새로 등록하시겠어요?`
+        );
+        if(!go) return; // 취소하면 중단
+      }
+    }
+  }
 
   if(editCgId){
     const idx=caregivers.findIndex(x=>String(x.id)===String(editCgId));
