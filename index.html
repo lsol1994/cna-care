@@ -1483,6 +1483,13 @@ let selRptPt       = null;
 let _fbReady       = false;
 let _fbPause       = false;
 
+// ─── Firebase 부분 업데이트(update()) 를 위한 마지막 동기화 스냅샷 ───
+// patients/caregivers: {id(String) → JSON 문자열} / 그 외 컬렉션: {key → JSON 문자열}
+// 비어있는 상태(최초 실행)에서는 save() 최초 1회가 전체 데이터를 update()로 올림
+let _lastSyncedPt   = {};
+let _lastSyncedCg   = {};
+let _lastSyncedMisc = {};
+
 // 현재 세션에서 앱을 통해 새로 추가된 ID (Firebase에 아직 없을 수 있음)
 // Firebase 콘솔에서 삭제된 항목과 구별하기 위해 사용
 let _newLocalPtIds = new Set();
@@ -1619,8 +1626,112 @@ function cleanForFirebase(obj) {
   return obj;
 }
 
+// ─── 배열 ↔ 객체(id 키 기반) 변환 헬퍼 (환자/간병인: patients/caregivers) ───
+// Firebase에는 배열이 아닌 { [id]: item } 형태의 객체로 저장 → 항목 단위 update() 가능
+function arrToObjById(arr) {
+  const obj = {};
+  (arr || []).forEach(item => {
+    if(item && item.id != null) obj[String(item.id)] = cleanForFirebase(item);
+  });
+  return obj;
+}
+// Firebase에서 내려온 값(객체 또는 구버전 배열)을 배열로 복원 (최신 등록순 = id 내림차순)
+function objToArrById(val) {
+  if(!val) return [];
+  if(Array.isArray(val)) return val.filter(x=>x!=null); // 구버전 배열 데이터 호환
+  if(typeof val === 'object') {
+    return Object.keys(val).map(k=>val[k]).filter(x=>x!=null)
+      .sort((a,b)=>Number(b.id)-Number(a.id));
+  }
+  return [];
+}
+
 // ─── 저장 ───
 let _saveTimer = null;
+
+// 현재 상태와 마지막 동기화 스냅샷을 비교해 실제로 바뀐 부분만 update() payload로 구성
+function buildSyncUpdates() {
+  const updates = {};
+  const pendingPt   = {};
+  const pendingCg   = {};
+  const pendingMisc = {};
+  let hasChange = false;
+
+  // patients: id별 부분 비교 (변경/신규만 전송, 삭제된 id는 null)
+  const curPtIds = new Set();
+  patients.forEach(p => {
+    if(!p || p.id == null) return;
+    const id = String(p.id);
+    curPtIds.add(id);
+    const clean = cleanForFirebase(p);
+    const str = JSON.stringify(clean);
+    if(_lastSyncedPt[id] !== str) {
+      updates['patients/' + id] = clean;
+      pendingPt[id] = str;
+      hasChange = true;
+    }
+  });
+  Object.keys(_lastSyncedPt).forEach(id => {
+    if(!curPtIds.has(id)) {
+      updates['patients/' + id] = null;
+      pendingPt[id] = null;
+      hasChange = true;
+    }
+  });
+
+  // caregivers: 동일 방식
+  const curCgIds = new Set();
+  caregivers.forEach(c => {
+    if(!c || c.id == null) return;
+    const id = String(c.id);
+    curCgIds.add(id);
+    const clean = cleanForFirebase(c);
+    const str = JSON.stringify(clean);
+    if(_lastSyncedCg[id] !== str) {
+      updates['caregivers/' + id] = clean;
+      pendingCg[id] = str;
+      hasChange = true;
+    }
+  });
+  Object.keys(_lastSyncedCg).forEach(id => {
+    if(!curCgIds.has(id)) {
+      updates['caregivers/' + id] = null;
+      pendingCg[id] = null;
+      hasChange = true;
+    }
+  });
+
+  // 그 외 컬렉션: 변경된 경우에만 해당 경로만 update (컬렉션 단위 부분 업데이트)
+  const miscEntries = [
+    ['rooms', rooms], ['logs', logs], ['attendance', attendance],
+    ['reportLogs', reportLogs], ['cfg', cfg], ['members', members],
+    ['memos', memos], ['notices', notices]
+  ];
+  miscEntries.forEach(([key, val]) => {
+    const clean = cleanForFirebase(val);
+    const str = JSON.stringify(clean);
+    if(_lastSyncedMisc[key] !== str) {
+      updates[key] = clean;
+      pendingMisc[key] = str;
+      hasChange = true;
+    }
+  });
+
+  return { updates, pendingPt, pendingCg, pendingMisc, hasChange };
+}
+
+// Firebase 저장 성공 후에만 스냅샷 확정 (실패 시 다음 save()에서 자동 재시도)
+function commitSyncSnapshot(pendingPt, pendingCg, pendingMisc) {
+  Object.keys(pendingPt).forEach(id => {
+    if(pendingPt[id] === null) delete _lastSyncedPt[id];
+    else _lastSyncedPt[id] = pendingPt[id];
+  });
+  Object.keys(pendingCg).forEach(id => {
+    if(pendingCg[id] === null) delete _lastSyncedCg[id];
+    else _lastSyncedCg[id] = pendingCg[id];
+  });
+  Object.keys(pendingMisc).forEach(key => { _lastSyncedMisc[key] = pendingMisc[key]; });
+}
 
 function save() {
   // 1. 로컬스토리지 즉시 저장
@@ -1635,21 +1746,21 @@ function save() {
   localStorage.setItem('cnc_memos',     JSON.stringify(memos));
   localStorage.setItem('cnc_notices',   JSON.stringify(notices));
 
-  // 2. Firebase 저장 (300ms 디바운스)
+  // 2. Firebase 저장 (300ms 디바운스, update() 부분 업데이트만 전송)
   if(!db) { showSyncStatus('저장 중... (연결 대기)'); return; }
   if(_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     // 인증 확인 후 저장
     const doSave = () => {
+      const { updates, pendingPt, pendingCg, pendingMisc, hasChange } = buildSyncUpdates();
+      if(!hasChange) { showSyncStatus('동기화됨'); return; } // 바뀐 게 없으면 네트워크 호출 생략
+
       _fbPause = true;
       db.ref('cnc').off();
       showSyncStatus('저장 중...');
-      const payload = cleanForFirebase({
-        patients, caregivers, rooms, logs,
-        attendance, reportLogs, cfg, members, memos, notices
-      });
-      db.ref('cnc').set(payload)
+      db.ref('cnc').update(updates)
         .then(() => {
+          commitSyncSnapshot(pendingPt, pendingCg, pendingMisc);
           showSyncStatus('저장됨');
           // Firebase 쓰기 완료 후 충분히 대기 (구 스냅샷 수신 방지)
           setTimeout(() => {
@@ -1662,6 +1773,8 @@ function save() {
           console.warn('Firebase 저장 실패:', e);
           showSyncStatus('저장 실패 ⚠️');
           toast('⚠️ 데이터베이스 저장 실패! 네트워크를 확인해주세요', true);
+          // pendingPt/pendingCg/pendingMisc를 커밋하지 않았으므로
+          // 다음 save() 호출 시 동일한 변경분이 자동으로 재시도됨
         });
     };
 
@@ -1687,6 +1800,29 @@ function save() {
 
 function saveMem() { save(); }
 
+
+// Firebase 병합 결과 반영 후 스냅샷을 현재 상태로 재정렬
+// (리스너에서 받은 데이터를 그대로 다시 save()가 재전송하는 걸 방지)
+function resyncLastSyncedSnapshot() {
+  const newPt = {};
+  patients.forEach(p => { if(p && p.id != null) newPt[String(p.id)] = JSON.stringify(cleanForFirebase(p)); });
+  _lastSyncedPt = newPt;
+
+  const newCg = {};
+  caregivers.forEach(c => { if(c && c.id != null) newCg[String(c.id)] = JSON.stringify(cleanForFirebase(c)); });
+  _lastSyncedCg = newCg;
+
+  _lastSyncedMisc = {
+    rooms:      JSON.stringify(cleanForFirebase(rooms)),
+    logs:       JSON.stringify(cleanForFirebase(logs)),
+    attendance: JSON.stringify(cleanForFirebase(attendance)),
+    reportLogs: JSON.stringify(cleanForFirebase(reportLogs)),
+    cfg:        JSON.stringify(cleanForFirebase(cfg)),
+    members:    JSON.stringify(cleanForFirebase(members)),
+    memos:      JSON.stringify(cleanForFirebase(memos)),
+    notices:    JSON.stringify(cleanForFirebase(notices))
+  };
+}
 
 // ─── Firebase 실시간 리스너 ───
 function attachFirebaseListener() {
@@ -1716,8 +1852,10 @@ function attachFirebaseListener() {
       return [];
     }
 
-    const fbPatients   = fbToArr(d.patients);
-    const fbCaregivers = fbToArr(d.caregivers);
+    const legacyPtArray = Array.isArray(d.patients);   // 구버전(배열) 저장 형식 여부
+    const legacyCgArray = Array.isArray(d.caregivers);
+    const fbPatients   = objToArrById(d.patients);   // {id: item} 객체 → 배열 (구버전 배열 데이터도 호환)
+    const fbCaregivers = objToArrById(d.caregivers);
     const fbRooms      = fbToArr(d.rooms);
     const fbLogs       = fbToArr(d.logs);
     const fbAttendance = fbToArr(d.attendance);
@@ -1827,6 +1965,21 @@ function attachFirebaseListener() {
     if(fbMemos.length > 0) { memos = fbMemos; localStorage.setItem('cnc_memos', JSON.stringify(memos)); }
     const fbNotices = fbToArr(d.notices);
     if(fbNotices.length > 0) { notices = fbNotices; localStorage.setItem('cnc_notices', JSON.stringify(notices)); }
+
+    // 구버전 배열 구조 감지 시 1회 자동 마이그레이션 (id 키 객체로 안전 변환)
+    // → 이후 save()의 부분 update()가 옛 배열 인덱스 키와 섞이지 않도록 함
+    if(legacyPtArray && patients.length) {
+      db.ref('cnc/patients').set(arrToObjById(patients))
+        .catch(e => console.warn('환자 데이터 구조 마이그레이션 실패:', e));
+    }
+    if(legacyCgArray && caregivers.length) {
+      db.ref('cnc/caregivers').set(arrToObjById(caregivers))
+        .catch(e => console.warn('간병인 데이터 구조 마이그레이션 실패:', e));
+    }
+
+    // 방금 반영된(병합 완료된) 현재 상태를 동기화 스냅샷으로 확정
+    // → 다음 save() 호출 시 여기서 받은 데이터를 다시 불필요하게 재전송하지 않음
+    resyncLastSyncedSnapshot();
 
     if(!_fbReady) {
       _fbReady = true;
